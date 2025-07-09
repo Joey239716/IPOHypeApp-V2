@@ -1,6 +1,26 @@
-import "@/styles/globals.css";
-import type { AppProps } from "next/app";
+// client/_app.tsx
 
-export default function App({ Component, pageProps }: AppProps) {
-  return <Component {...pageProps} />;
+import type { AppProps } from 'next/app'
+import '@/styles/globals.css' // Make sure this path matches your CSS location
+import { Inter, JetBrains_Mono } from 'next/font/google'
+
+// Load fonts with CSS variable support
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+})
+
+export default function MyApp({ Component, pageProps }: AppProps) {
+  return (
+    <main className={`${inter.variable} ${jetbrainsMono.variable} font-sans`}>
+      <Component {...pageProps} />
+    </main>
+  )
 }
