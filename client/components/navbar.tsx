@@ -30,22 +30,22 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50">
       {/* ✅ Top navbar - visible only on md and up */}
       <div className="hidden md:block bg-white dark:bg-gray-900 text-xs border-b-[0.5px] border-gray-200 dark:border-gray-500 pt-2.5 pb-3">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-end space-x-4 text-gray-700 dark:text-gray-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-end space-x-2 text-gray-700 dark:text-gray-300">
           <Link
             href="/settings"
-            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-neutral-200 dark:border-gray-500 bg-transparent px-2 py-1 font-medium text-neutral-600 transition-all hover:bg-[#eeeeee] dark:hover:bg-neutral-700 select-none cursor-pointer [box-shadow:0px_4px_1px_#d4d4d4] active:translate-y-[2px] active:shadow-none"
+            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-neutral-200 dark:border-gray-500 bg-transparent px-1.5 py-1 font-medium text-neutral-600 transition-all hover:bg-[#eeeeee] dark:hover:bg-neutral-700 select-none cursor-pointer [box-shadow:0px_4px_1px_#d4d4d4] active:translate-y-[2px] active:shadow-none pb-1.5 pt-0.5"
           >
             <Settings size={16} className="mr-0" />
           </Link>
           <Link
             href="/login"
-            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-neutral-200 dark:border-gray-500 bg-transparent px-3 py-1 font-medium text-neutral-600 transition-all hover:bg-[#eeeeee] dark:hover:bg-neutral-700 select-none cursor-pointer [box-shadow:0px_4px_1px_#d4d4d4] active:translate-y-[2px] active:shadow-none"
+            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-neutral-200 dark:border-gray-500 bg-transparent px-2 py-1 font-medium text-neutral-600 transition-all hover:bg-[#eeeeee] dark:hover:bg-neutral-700 select-none cursor-pointer [box-shadow:0px_4px_1px_#d4d4d4] active:translate-y-[2px] active:shadow-none pb-1.5 pt-0.5"
           >
             Log In
           </Link>
           <Link
             href="/signup"
-            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-[#0356a8] dark:border-gray-500 bg-[#0466c8] text-white px-3 py-1 font-medium transition-all hover:bg-[#0356a8] select-none cursor-pointer [box-shadow:0px_4px_1px_#034b8f] active:translate-y-[2px] active:shadow-none"
+            className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-[#0356a8] dark:border-gray-500 bg-[#0466c8] text-white px-2 py-1 font-medium transition-all hover:bg-[#0356a8] select-none cursor-pointer [box-shadow:0px_4px_1px_#034b8f] active:translate-y-[2px] active:shadow-none pb-1.5 pt-0.5"
           >
             Sign Up
           </Link>
@@ -132,8 +132,8 @@ export default function Navbar() {
                   ${
                     item.highlight
                       ? '[box-shadow:0px_4px_1px_#034b8f]'
-                      : '[box-shadow:0px_4px_1px_#d4d4d4]'
-                  }
+                      : '[box-shadow:0px_4px_1px_#bdbdbd]'
+                  } 
                   active:translate-y-[2px] active:shadow-none
                 `}
                 style={{ fontSize: '0.75rem' }}
