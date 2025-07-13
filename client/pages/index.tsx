@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+/* import React, { useEffect, useState } from 'react'
 
 
 function index() {
@@ -33,3 +33,17 @@ function index() {
 }
 
 export default index
+*/
+
+import Navbar from '@/components/navbar'
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <Navbar />
+        {children}
+      </body>
+    </html>
+  )
+}
