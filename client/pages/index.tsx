@@ -35,13 +35,13 @@ function index() {
 export default index
 */
 
-import Navbar from '@/components/navbar'
+import MainPage from '@/components/mainPage'
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <Navbar />
+        <MainPage />
         {children}
       </body>
     </html>

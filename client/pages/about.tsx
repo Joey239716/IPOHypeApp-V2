@@ -5,7 +5,6 @@ export default function AboutPage() {
         <h1 className="text-4xl sm:text-5xl font-bold mb-6">About Us</h1>
         <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 mb-8">
           Welcome to <span className="font-semibold text-blue-600 dark:text-blue-400">MySite</span> — where innovation meets simplicity. 
-          We're a team of creators, developers, and dreamers committed to building meaningful digital experiences.
         </p>
         <div className="mt-12 grid sm:grid-cols-2 gap-8 text-left">
           <div>
