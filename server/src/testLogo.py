@@ -1,50 +1,138 @@
+import time
+import datetime
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from io import BytesIO
-from PIL import Image
+import re
 
-USER_AGENT = "joeydaspam@gmail.com"
-HEADERS    = {"User-Agent": USER_AGENT}
+FORMS = "S-1,F-1,S-1/A,F-1/A,424B1,424B4,S-1MEF,F-1MEF,RW"
+LIMIT_WORDS = 2000
+BYTE_CHUNK_SIZE = 8192  # ~8KB chunks
 
-def fetch_first_img_src(page_url: str) -> str | None:
-    resp = requests.get(page_url, headers=HEADERS)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    img = soup.find("img")
-    return img["src"] if img and img.has_attr("src") else None
+IPO_REGEX = re.compile(r"\binitial public offering\b", re.IGNORECASE)
 
-def download_image(img_url: str) -> bytes:
-    resp = requests.get(img_url, headers=HEADERS, stream=True)
-    resp.raise_for_status()
-    return resp.content
+class EFTSFetcher:
+    def __init__(self, user_agent="joeydaspam@gmail.com", rate_limit=0.5, max_retries=3):
+        self.headers = {"User-Agent": user_agent, "Accept": "application/json"}
+        self.rate_limit = rate_limit
+        self.max_retries = max_retries
+        self.results = []  # store results for summary
 
-def save_100x100(page_url: str, output_path: str, quality: int = 80):
-    # 1) find first image src on the page
-    src = fetch_first_img_src(page_url)
-    if not src:
-        raise RuntimeError("No <img> found on page")
-    img_url = urljoin(page_url, src)
+    def clean_html(self, raw_html):
+        """Remove tags & ensure proper spacing."""
+        soup = BeautifulSoup(raw_html, "html.parser")
 
-    # 2) download it
-    img_bytes = download_image(img_url)
+        # Remove non-text elements
+        for tag in soup(["script", "style", "head", "meta", "title"]):
+            tag.decompose()
 
-    # 3) open & thumbnail to 100×100
-    img = Image.open(BytesIO(img_bytes))
-    img.thumbnail((100, 100))
+        # Extract text with spacing
+        text = soup.get_text(separator=" ")
 
-    # 4) save as JPEG (or PNG if you prefer)
-    fmt = "JPEG" if img.format != "PNG" else "PNG"
-    save_kwargs = {"format": fmt}
-    if fmt == "JPEG":
-        save_kwargs.update({"quality": quality, "optimize": True})
-    else:
-        save_kwargs.update({"optimize": True})
+        # Normalize spaces
+        return ' '.join(text.split())
 
-    img.save(output_path, **save_kwargs)
-    print(f"Saved 100×100 image to {output_path}")
+    def fetch(self, date):
+        print(f"Fetching filings for {date} using EFTS JSON")
+        base_url = "https://efts.sec.gov/LATEST/search-index"
+        params = {
+            "dateRange": "custom",
+            "startdt": date,
+            "enddt": date,
+            "forms": FORMS,
+            "from": 0,
+            "size": 100
+        }
 
-# Example usage:
-if __name__ == "__main__":
-    page = "https://www.sec.gov/Archives/edgar/data/1795586/000162828025028733/chimefinancialinc-sx1a.htm"
-    save_100x100(page, "logo_100x100.jpg")
+        while True:
+            retries = 0
+            while retries < self.max_retries:
+                try:
+                    resp = requests.get(base_url, headers=self.headers, params=params, timeout=30)
+                    print("Querying:", resp.url)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception as e:
+                    retries += 1
+                    print(f"Retry {retries}/{self.max_retries} failed for offset {params['from']}: {e}")
+                    time.sleep(self.rate_limit * (2 ** retries))
+            else:
+                print("Max retries exceeded, stopping fetch.")
+                return
+
+            hits = data.get("hits", {}).get("hits", [])
+            if not hits:
+                print("No filings returned by EFTS.")
+                return
+
+            for i, hit in enumerate(hits, start=1):
+                src = hit.get("_source", {})
+                form = src.get("file_type") or src.get("form") or src.get("formType")
+                cik = src.get("ciks", [None])[0]
+                adsh = src.get("adsh")
+                company = src.get("display_names", [None])[0]
+
+                link = None
+                if adsh and cik:
+                    try:
+                        cik_stripped = str(int(cik))
+                        adsh_nodash = adsh.replace("-", "")
+                        link = f"https://www.sec.gov/Archives/edgar/data/{cik_stripped}/{adsh_nodash}/{adsh}.txt"
+                    except Exception:
+                        link = None
+
+                print(f"\n[{i}] {company} ({form}) - CIK {cik}")
+                ipo_detected = False
+                if link:
+                    try:
+                        r = requests.get(link, headers=self.headers, timeout=30, stream=True)
+                        r.raise_for_status()
+
+                        buffer = ""
+                        for chunk in r.iter_content(BYTE_CHUNK_SIZE, decode_unicode=True):
+                            buffer += chunk
+                            if len(buffer) > 200000:  # stop early (~200KB)
+                                break
+
+                        cleaned_text = self.clean_html(buffer)
+                        words = cleaned_text.split()
+                        snippet = ' '.join(words[:LIMIT_WORDS])
+
+                        if IPO_REGEX.search(snippet):
+                            ipo_detected = True
+
+                        print(f"--- First {LIMIT_WORDS} words (cleaned) ---")
+                        print(snippet)
+                        print("-" * 80)
+
+                    except Exception as e:
+                        print(f"Failed to fetch filing text: {e}")
+                else:
+                    print("No link available for this filing.")
+
+                # Save result for summary
+                self.results.append({
+                    "company": company,
+                    "form": form,
+                    "cik": cik,
+                    "ipo_detected": ipo_detected
+                })
+
+            if len(hits) < params["size"]:
+                break
+
+            params["from"] += params["size"]
+            time.sleep(self.rate_limit)
+
+    def print_summary(self):
+        print("\n========== IPO DETECTION SUMMARY ==========")
+        for result in self.results:
+            status = "✅ IPO detected" if result["ipo_detected"] else "❌ Not an IPO"
+            print(f"{result['company']} ({result['form']}, CIK {result['cik']}): {status}")
+        print("==========================================")
+
+if __name__ == '__main__':
+    fetcher = EFTSFetcher()
+    today = datetime.date.today().isoformat()
+    fetcher.fetch(today)
+    fetcher.print_summary()
