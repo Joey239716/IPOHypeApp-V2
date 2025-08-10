@@ -1,6 +1,6 @@
 import datetime
 from zoneinfo import ZoneInfo
-from pipeline.pipeline import Pipeline
+from .pipeline.pipeline import Pipeline
 
 if __name__ == '__main__':
     # Daytime run: query only "today" in Eastern Time via EFTS

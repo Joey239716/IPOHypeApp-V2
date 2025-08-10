@@ -89,8 +89,16 @@ class LogoService:
             return None
 
     def upload_and_get_url(self, object_name: str, image_bytes: bytes) -> Optional[str]:
+        if settings.DRY_RUN:
+            # Skip actual upload; return the would-be public URL
+            try:
+                host = settings.SUPABASE_URL.split("//")[1]
+            except Exception:
+                host = "example.local"
+            return f"https://{host}/storage/v1/object/public/{settings.BUCKET_NAME}/{object_name}"
+        
         bucket = self.db.client.storage.from_(settings.BUCKET_NAME)
-        # try upsert via file_options, fallback to overwrite
+            # try upsert via file_options, fallback to overwrite
         try:
             bucket.upload(object_name, image_bytes, file_options={"content-type": "image/webp", "upsert": True})
         except TypeError:
