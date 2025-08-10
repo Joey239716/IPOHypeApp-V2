@@ -4,11 +4,17 @@ from __future__ import annotations
 import datetime
 from typing import Any, List
 
+from openai import OpenAI
+
 from ..config import settings
 from ..services.db import Database
 from ..services.logo_service import LogoService
+from ..services.ai_analysis import AnalyzeIPO
 from ..efts.fetcher import EFTSFetcher
 from ..edgar.daily_index import DailyIndexChecker
+
+# Only analyze these amendment forms with GPT
+FORMS_TO_ANALYZE = {"S-1/A", "F-1/A"}
 
 
 class Pipeline:
@@ -17,6 +23,12 @@ class Pipeline:
         self.logo = LogoService(self.db)
         self.fetcher = EFTSFetcher()
         self.daily = DailyIndexChecker()
+
+        # --- AI clients (minimal integration) ---
+        # Ensure OPENAI_API_KEY is set in your settings/env
+        self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
+        # Database should expose the underlying Supabase client as `client`
+        self.ai = AnalyzeIPO(self.db.client, self.openai)
 
     # ----- shared processing for both EFTS and daily-index -----
     def _process_filings(self, filings: List[dict[str, Any]]) -> None:
@@ -121,7 +133,7 @@ class Pipeline:
                     "latest_filing_date": date,
                     "mainlink": mainlink,
                     "is_ipo": True,
-                    "analyzed": False,
+                    "analyzed": False,  # will be flipped to True by AI on success
                     "accession_number": acc,
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 }
@@ -134,6 +146,15 @@ class Pipeline:
                     self.logo.add_logo_if_missing_or_stale(cik, name or "")
                 except Exception as e:
                     print(f"[WARN] Logo update failed for {cik}: {e}")
+
+                # --- Minimal AI integration: analyze only S-1/A or F-1/A right away ---
+                # AnalyzeIPO.analyze_one() will update the 'ipo' row and set analyzed=True on success.
+                if form in FORMS_TO_ANALYZE and mainlink:
+                    try:
+                        self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
+                    except Exception as e:
+                        # Leave analyzed=False on failure; we can retry on the next run
+                        print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
 
     # ----- daytime EFTS run (start/end inclusive, YYYY-MM-DD) -----
     def fetch_and_push(self, start_date: str, end_date: str) -> None:

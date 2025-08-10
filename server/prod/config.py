@@ -26,6 +26,7 @@ class Settings:
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     LOGO_DEV_KEY: str = os.getenv("LOGO_DEV_KEY", "")
     LOGO_NAME_SALT: str = os.getenv("LOGO_NAME_SALT", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "") 
 
     # SEC requires a valid contact email in the UA (we use the same field everywhere)
     SEC_USER_AGENT: str = os.getenv("SEC_USER_AGENT", "")
