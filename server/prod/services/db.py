@@ -29,6 +29,18 @@ class Database:
         resp = self._client.table('ipo').select('cik, latest_filing_date, is_ipo, company_name, logo_url, updated_logo_date').execute()
         rows = resp.data or []
         return {str(r['cik']): r for r in rows}
+    
+    def get_ipo_by_cik(self, cik: str) -> Optional[dict[str, Any]]:
+        """
+        Return a single IPO row for the given CIK, including the 'analyzed' field.
+        """
+        resp = self._client.table('ipo') \
+            .select('*') \
+            .eq('cik', cik) \
+            .limit(1) \
+            .execute()
+        rows = resp.data or []
+        return rows[0] if rows else None
 
     def upsert_ipo(self, rec: dict[str, Any]) -> None:
         if settings.DRY_RUN:

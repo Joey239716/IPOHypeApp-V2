@@ -97,7 +97,7 @@ class Pipeline:
                         print(f"[WARN] Logo refresh before move failed for {cik}: {e}")
 
                 # Build public_companies record (include logo if available)
-                pub = {
+                pub: dict[str, Any] = {
                     "cik": cik,
                     "company_name": name,
                     "ticker": ticker,
@@ -151,7 +151,12 @@ class Pipeline:
                 # AnalyzeIPO.analyze_one() will update the 'ipo' row and set analyzed=True on success.
                 if form in FORMS_TO_ANALYZE and mainlink:
                     try:
-                        self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
+                        # SAFETY GUARD: skip AI if this CIK is already analyzed
+                        already = self.db.get_ipo_by_cik(str(cik))  # should return dict with 'analyzed' key
+                        if already and already.get("analyzed"):
+                            print(f"[AI] Skip analyze for CIK={cik} form={form}: already analyzed.")
+                        else:
+                            self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
                     except Exception as e:
                         # Leave analyzed=False on failure; we can retry on the next run
                         print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
@@ -159,6 +164,31 @@ class Pipeline:
     # ----- daytime EFTS run (start/end inclusive, YYYY-MM-DD) -----
     def fetch_and_push(self, start_date: str, end_date: str) -> None:
         filings = self.fetcher.fetch(start_date, end_date)
+
+        # De-dupe by accession_number against what we already recorded for the date window.
+        # We collect "seen" accessions per-day to keep the query surface small.
+        try:
+            seen_accessions: set[str] = set()
+            start = datetime.date.fromisoformat(start_date)
+            end = datetime.date.fromisoformat(end_date)
+            cur = start
+            while cur <= end:
+                iso = cur.isoformat()
+                seen_accessions.update(self.db.get_accessions_for_date(iso))
+                cur += datetime.timedelta(days=1)
+
+            if seen_accessions:
+                before = len(filings)
+                filings = [
+                    f for f in filings
+                    if not f.get("accession_number") or f["accession_number"] not in seen_accessions
+                ]
+                skipped = before - len(filings)
+                if skipped:
+                    print(f"[EFTS] Skipping {skipped} filings already captured (by accession).")
+        except Exception as e:
+            print(f"[WARN] Daytime de-dupe failed: {e}")
+
         self._process_filings(filings)
 
     # ----- nightly master daily-index reconcile (ds = YYYYMMDD) -----
