@@ -1,4 +1,3 @@
-# prod/pipeline/pipeline.py
 from __future__ import annotations
 
 import datetime
@@ -13,7 +12,7 @@ from ..services.ai_analysis import AnalyzeIPO
 from ..efts.fetcher import EFTSFetcher
 from ..edgar.daily_index import DailyIndexChecker
 
-# Only analyze these amendment forms with GPT
+# Only analyze these amendment forms with GPT (kept for future use)
 FORMS_TO_ANALYZE = {"S-1/A", "F-1/A"}
 
 
@@ -25,10 +24,15 @@ class Pipeline:
         self.daily = DailyIndexChecker()
 
         # --- AI clients (minimal integration) ---
-        # Ensure OPENAI_API_KEY is set in your settings/env
         self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
-        # Database should expose the underlying Supabase client as `client`
         self.ai = AnalyzeIPO(self.db.client, self.openai)
+
+    @staticmethod
+    def build_sec_html_url(cik: str, accession_number: str, primary_document: str) -> str:
+        """Build a SEC Archives HTML URL from cik, accession_number, and primary_document."""
+        cik_nozero = str(int(cik))  # remove leading zeros
+        acc_nodash = accession_number.replace("-", "")
+        return f"https://www.sec.gov/Archives/edgar/data/{cik_nozero}/{acc_nodash}/{primary_document}"
 
     # ----- shared processing for both EFTS and daily-index -----
     def _process_filings(self, filings: List[dict[str, Any]]) -> None:
@@ -36,7 +40,7 @@ class Pipeline:
             print("[INFO] No filings to process.")
             return
 
-        active = self.db.get_ipo_snapshot()
+        active = self.db.get_ipo_snapshot()  # dict keyed by normalized str(CIK)
 
         for f in filings:
             cik = f.get("cik")
@@ -48,28 +52,47 @@ class Pipeline:
             mainlink = f.get("mainlink")
             is_ipo_flag = f.get("is_ipo")
 
+            # Ensure mainlink is built if missing and we have primary_document
+            if not mainlink and cik and acc and f.get("primary_document"):
+                mainlink = self.build_sec_html_url(cik, acc, f["primary_document"])
+                f["mainlink"] = mainlink
+
             if not cik or not form or not date:
                 continue
 
             existing = active.get(str(cik))
 
-            # Ignore non-initial forms if we haven't seen this CIK before
+            # Skip amendments if CIK already tracked (prevents re-parsing root initial forms)
+            if form in {"S-1/A", "F-1/A"} and existing:
+                print(f"[SKIP] Amendment {form} for existing CIK {cik} — will be handled in amendments pass.")
+                # If you DO want to analyze amendments here, remove this `continue` and call AI below
+                # continue
+
+            # Skip initial S-1 / F-1 if already processed
+            if form in {"S-1", "F-1"} and existing:
+                print(f"[SKIP] Initial form {form} for existing CIK {cik} — already processed.")
+                continue
+
+            # Ignore non-initial forms for new CIKs
             if not existing and form not in settings.INITIAL_FORMS:
+                print(f"[SKIP] Non-initial form {form} for new CIK {cik} — not tracked.")
                 continue
 
             # For initial forms, require IPO phrase detection
             if form in settings.INITIAL_FORMS and not is_ipo_flag:
+                print(f"[SKIP] {form} for CIK {cik} — failed IPO phrase detection.")
                 continue
+
+            # If we made it here, it's a valid new/updated IPO record
+            print(f"[DETECT] {form} for CIK {cik} — new IPO detection.")
 
             # Prospectus -> move to public companies (carry/refresh logo)
             if form in {"424B1", "424B4"} and existing:
                 print(f"[DEBUG] Prospectus {form} for CIK {cik}, moving to public_companies")
 
-                # Start with existing IPO logo fields
                 logo_url = existing.get("logo_url") if isinstance(existing, dict) else None
                 logo_date = existing.get("updated_logo_date") if isinstance(existing, dict) else None
 
-                # Decide if we should refresh (missing or stale)
                 stale = False
                 if logo_date:
                     try:
@@ -80,7 +103,6 @@ class Pipeline:
                 else:
                     stale = True
 
-                # Fetch/upload if missing or stale
                 if stale:
                     try:
                         cleaned = self.logo.clean_company_name(name or "")
@@ -96,7 +118,6 @@ class Pipeline:
                     except Exception as e:
                         print(f"[WARN] Logo refresh before move failed for {cik}: {e}")
 
-                # Build public_companies record (include logo if available)
                 pub: dict[str, Any] = {
                     "cik": cik,
                     "company_name": name,
@@ -111,7 +132,6 @@ class Pipeline:
                 if logo_date:
                     pub["updated_logo_date"] = str(logo_date)[:10]
 
-                # Move: delete from ipo, upsert into public_companies
                 self.db.delete_ipo(cik)
                 self.db.move_to_public(pub)
                 print(f"[MOVE] {cik} → public_companies form={form} ticker={ticker}")
@@ -133,7 +153,7 @@ class Pipeline:
                     "latest_filing_date": date,
                     "mainlink": mainlink,
                     "is_ipo": True,
-                    "analyzed": False,  # will be flipped to True by AI on success
+                    "analyzed": False,  # flip to True after AI pipeline if you enable it
                     "accession_number": acc,
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 }
@@ -141,53 +161,51 @@ class Pipeline:
                 print(f"[UPSERT] {cik} latest={form} ticker={ticker}")
                 active[str(cik)] = rec
 
-                # Add/refresh logo if missing or stale (≥ REFRESH_AFTER_DAYS)
                 try:
                     self.logo.add_logo_if_missing_or_stale(cik, name or "")
                 except Exception as e:
                     print(f"[WARN] Logo update failed for {cik}: {e}")
 
-                # --- Minimal AI integration: analyze only S-1/A or F-1/A right away ---
-                # AnalyzeIPO.analyze_one() will update the 'ipo' row and set analyzed=True on success.
-                if form in FORMS_TO_ANALYZE and mainlink:
-                    try:
-                        # SAFETY GUARD: skip AI if this CIK is already analyzed
-                        already = self.db.get_ipo_by_cik(str(cik))  # should return dict with 'analyzed' key
-                        if already and already.get("analyzed"):
-                            print(f"[AI] Skip analyze for CIK={cik} form={form}: already analyzed.")
-                        else:
-                            self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
-                    except Exception as e:
-                        # Leave analyzed=False on failure; we can retry on the next run
-                        print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
+                # --- Optional AI integration (currently off) ---
+                # if form in FORMS_TO_ANALYZE and mainlink:
+                #     try:
+                #         already = self.db.get_ipo_by_cik(str(cik))
+                #         if already and already.get("analyzed"):
+                #             print(f"[AI] Skip analyze for CIK={cik} form={form}: already analyzed.")
+                #         else:
+                #             self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
+                #     except Exception as e:
+                #         print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
 
     # ----- daytime EFTS run (start/end inclusive, YYYY-MM-DD) -----
     def fetch_and_push(self, start_date: str, end_date: str) -> None:
-        filings = self.fetcher.fetch(start_date, end_date)
+        # Build the existing CIK set (normalized) to pass to the fetcher
+        active_snapshot = self.db.get_ipo_snapshot()  # { "1872195": {...}, ... }
+        existing_ciks = {str(int(c)) for c in active_snapshot.keys() if c is not None}
 
-        # De-dupe by accession_number against what we already recorded for the date window.
-        # We collect "seen" accessions per-day to keep the query surface small.
+        filings = self.fetcher.fetch(start_date, end_date, existing_ciks=existing_ciks)
+
+        # Global accession de-dupe (keep ones with no accession or not seen yet)
         try:
-            seen_accessions: set[str] = set()
-            start = datetime.date.fromisoformat(start_date)
-            end = datetime.date.fromisoformat(end_date)
-            cur = start
-            while cur <= end:
-                iso = cur.isoformat()
-                seen_accessions.update(self.db.get_accessions_for_date(iso))
-                cur += datetime.timedelta(days=1)
-
-            if seen_accessions:
-                before = len(filings)
-                filings = [
-                    f for f in filings
-                    if not f.get("accession_number") or f["accession_number"] not in seen_accessions
-                ]
-                skipped = before - len(filings)
-                if skipped:
-                    print(f"[EFTS] Skipping {skipped} filings already captured (by accession).")
+            seen_accessions = {
+                r["accession_number"]
+                for r in self.db.client.table("ipo")
+                .select("accession_number")
+                .execute().data
+                if r.get("accession_number")
+            }
+            before = len(filings)
+            filings = [
+                f
+                for f in filings
+                if not f.get("accession_number")
+                or f["accession_number"] not in seen_accessions
+            ]
+            skipped = before - len(filings)
+            if skipped:
+                print(f"[EFTS] Skipping {skipped} filings already in database (global accession check).")
         except Exception as e:
-            print(f"[WARN] Daytime de-dupe failed: {e}")
+            print(f"[WARN] Daytime global de-dupe failed: {e}")
 
         self._process_filings(filings)
 
@@ -195,17 +213,25 @@ class Pipeline:
     def reconcile_daily_index(self, ds: str) -> None:
         filings = self.daily.fetch_for_date(ds)
 
-        # Skip anything already captured during the day (by accession_number)
-        date_iso = f"{ds[:4]}-{ds[4:6]}-{ds[6:]}"
-        seen = self.db.get_accessions_for_date(date_iso)
-        if seen:
+        try:
+            seen_accessions = {
+                r["accession_number"]
+                for r in self.db.client.table("ipo")
+                .select("accession_number")
+                .execute().data
+                if r.get("accession_number")
+            }
             before = len(filings)
             filings = [
-                f for f in filings
-                if not f.get("accession_number") or f["accession_number"] not in seen
+                f
+                for f in filings
+                if not f.get("accession_number")
+                or f["accession_number"] not in seen_accessions
             ]
             skipped = before - len(filings)
             if skipped:
-                print(f"[DAILY] Skipping {skipped} filings already captured during the day (by accession).")
+                print(f"[DAILY] Skipping {skipped} filings already in database (global accession check).")
+        except Exception as e:
+            print(f"[WARN] Nightly global de-dupe failed: {e}")
 
         self._process_filings(filings)
