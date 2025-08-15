@@ -1,7 +1,9 @@
+# server/prod/pipeline/pipeline.py
 from __future__ import annotations
 
 import datetime
 from typing import Any, List
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
 
@@ -9,11 +11,14 @@ from ..config import settings
 from ..services.db import Database
 from ..services.logo_service import LogoService
 from ..services.ai_analysis import AnalyzeIPO
+from ..services.daily_cache import DailyCache  # NEW: Redis daily cache
 from ..efts.fetcher import EFTSFetcher
 from ..edgar.daily_index import DailyIndexChecker
 
 # Only analyze these amendment forms with GPT (kept for future use)
 FORMS_TO_ANALYZE = {"S-1/A", "F-1/A"}
+
+ET = ZoneInfo("America/Toronto")
 
 
 class Pipeline:
@@ -22,6 +27,7 @@ class Pipeline:
         self.logo = LogoService(self.db)
         self.fetcher = EFTSFetcher()
         self.daily = DailyIndexChecker()
+        self.cache = DailyCache()  # NEW
 
         # --- AI clients (minimal integration) ---
         self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -60,12 +66,17 @@ class Pipeline:
             if not cik or not form or not date:
                 continue
 
+            # --- NEW: read Redis first; skip if we've already handled this accession today ---
+            if acc and self.cache.seen_today(acc):
+                print(f"[CACHE] skip (seen today): {acc} CIK={cik} form={form}")
+                continue
+
             existing = active.get(str(cik))
 
             # Skip amendments if CIK already tracked (prevents re-parsing root initial forms)
             if form in {"S-1/A", "F-1/A"} and existing:
                 print(f"[SKIP] Amendment {form} for existing CIK {cik} — will be handled in amendments pass.")
-                # If you DO want to analyze amendments here, remove this `continue` and call AI below
+                # If you DO want to analyze amendments here, remove this block.
                 # continue
 
             # Skip initial S-1 / F-1 if already processed
@@ -132,14 +143,25 @@ class Pipeline:
                 if logo_date:
                     pub["updated_logo_date"] = str(logo_date)[:10]
 
+                # DB writes
                 self.db.delete_ipo(cik)
                 self.db.move_to_public(pub)
+
+                # --- NEW: mark in Redis only after successful DB writes ---
+                if acc:
+                    self.cache.mark_processed(acc)
+
                 print(f"[MOVE] {cik} → public_companies form={form} ticker={ticker}")
                 continue
 
             # Withdrawals remove from IPO table
             if form == "RW" and existing:
                 self.db.delete_ipo(cik)
+
+                # --- NEW: mark in Redis so we don't handle this RW again today ---
+                if acc:
+                    self.cache.mark_processed(acc)
+
                 print(f"[DELETE] {cik} withdrawn")
                 continue
 
@@ -157,9 +179,15 @@ class Pipeline:
                     "accession_number": acc,
                     "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 }
+
+                # DB write
                 self.db.upsert_ipo(rec)
                 print(f"[UPSERT] {cik} latest={form} ticker={ticker}")
                 active[str(cik)] = rec
+
+                # --- NEW: mark in Redis after successful DB write ---
+                if acc:
+                    self.cache.mark_processed(acc)
 
                 try:
                     self.logo.add_logo_if_missing_or_stale(cik, name or "")
@@ -179,13 +207,22 @@ class Pipeline:
 
     # ----- daytime EFTS run (start/end inclusive, YYYY-MM-DD) -----
     def fetch_and_push(self, start_date: str, end_date: str) -> None:
+        # Optional: warm today's cache once from DB so restarts don't reprocess earlier items
+        try:
+            today_iso = datetime.datetime.now(ET).date().isoformat()
+            warmed = self.cache.bulk_seed_processed(self.db.get_accessions_for_date(today_iso))
+            if warmed:
+                print(f"[CACHE] Warmed {warmed} accessions for {today_iso}")
+        except Exception as e:
+            print(f"[WARN] Cache warm-up skipped: {e}")
+
         # Build the existing CIK set (normalized) to pass to the fetcher
         active_snapshot = self.db.get_ipo_snapshot()  # { "1872195": {...}, ... }
         existing_ciks = {str(int(c)) for c in active_snapshot.keys() if c is not None}
 
         filings = self.fetcher.fetch(start_date, end_date, existing_ciks=existing_ciks)
 
-        # Global accession de-dupe (keep ones with no accession or not seen yet)
+        # Global accession de-dupe (DB safety net)
         try:
             seen_accessions = {
                 r["accession_number"]
@@ -213,6 +250,7 @@ class Pipeline:
     def reconcile_daily_index(self, ds: str) -> None:
         filings = self.daily.fetch_for_date(ds)
 
+        # Keep DB de-dupe here as well (nightly)
         try:
             seen_accessions = {
                 r["accession_number"]
