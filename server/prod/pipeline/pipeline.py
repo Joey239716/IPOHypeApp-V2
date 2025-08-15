@@ -11,7 +11,7 @@ from ..config import settings
 from ..services.db import Database
 from ..services.logo_service import LogoService
 from ..services.ai_analysis import AnalyzeIPO
-from ..services.daily_cache import DailyCache  # NEW: Redis daily cache
+from ..services.daily_cache import DailyCache  # Redis daily cache
 from ..efts.fetcher import EFTSFetcher
 from ..edgar.daily_index import DailyIndexChecker
 
@@ -27,7 +27,7 @@ class Pipeline:
         self.logo = LogoService(self.db)
         self.fetcher = EFTSFetcher()
         self.daily = DailyIndexChecker()
-        self.cache = DailyCache()  # NEW
+        self.cache = DailyCache()
 
         # --- AI clients (minimal integration) ---
         self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -63,35 +63,42 @@ class Pipeline:
                 mainlink = self.build_sec_html_url(cik, acc, f["primary_document"])
                 f["mainlink"] = mainlink
 
+            # --- BASIC FIELD CHECK ---
             if not cik or not form or not date:
+                # NEW: mark skipped accessions so we don't see them again today
+                if acc:
+                    self.cache.mark_processed(acc)
                 continue
 
-            # --- NEW: read Redis first; skip if we've already handled this accession today ---
+            # --- READ REDIS FIRST; SKIP IF ALREADY HANDLED TODAY ---
             if acc and self.cache.seen_today(acc):
                 print(f"[CACHE] skip (seen today): {acc} CIK={cik} form={form}")
                 continue
 
             existing = active.get(str(cik))
 
-            # Skip amendments if CIK already tracked (prevents re-parsing root initial forms)
-            if form in {"S-1/A", "F-1/A"} and existing:
-                print(f"[SKIP] Amendment {form} for existing CIK {cik} — will be handled in amendments pass.")
-                # If you DO want to analyze amendments here, remove this block.
-                # continue
-
             # Skip initial S-1 / F-1 if already processed
             if form in {"S-1", "F-1"} and existing:
                 print(f"[SKIP] Initial form {form} for existing CIK {cik} — already processed.")
+                # NEW: mark so we don't keep re-evaluating this all day
+                if acc:
+                    self.cache.mark_processed(acc)
                 continue
 
             # Ignore non-initial forms for new CIKs
             if not existing and form not in settings.INITIAL_FORMS:
                 print(f"[SKIP] Non-initial form {form} for new CIK {cik} — not tracked.")
+                # NEW: mark skip
+                if acc:
+                    self.cache.mark_processed(acc)
                 continue
 
             # For initial forms, require IPO phrase detection
             if form in settings.INITIAL_FORMS and not is_ipo_flag:
                 print(f"[SKIP] {form} for CIK {cik} — failed IPO phrase detection.")
+                # NEW: mark skip
+                if acc:
+                    self.cache.mark_processed(acc)
                 continue
 
             # If we made it here, it's a valid new/updated IPO record
@@ -147,7 +154,7 @@ class Pipeline:
                 self.db.delete_ipo(cik)
                 self.db.move_to_public(pub)
 
-                # --- NEW: mark in Redis only after successful DB writes ---
+                # Mark in Redis only after successful DB writes
                 if acc:
                     self.cache.mark_processed(acc)
 
@@ -158,7 +165,7 @@ class Pipeline:
             if form == "RW" and existing:
                 self.db.delete_ipo(cik)
 
-                # --- NEW: mark in Redis so we don't handle this RW again today ---
+                # Mark in Redis so we don't handle this RW again today
                 if acc:
                     self.cache.mark_processed(acc)
 
@@ -185,7 +192,7 @@ class Pipeline:
                 print(f"[UPSERT] {cik} latest={form} ticker={ticker}")
                 active[str(cik)] = rec
 
-                # --- NEW: mark in Redis after successful DB write ---
+                # Mark in Redis after successful DB write
                 if acc:
                     self.cache.mark_processed(acc)
 
@@ -222,25 +229,43 @@ class Pipeline:
 
         filings = self.fetcher.fetch(start_date, end_date, existing_ciks=existing_ciks)
 
-        # Global accession de-dupe (DB safety net)
+        # --- Global accession de-dupe (DB safety net) + mark skipped ones in Redis ---
         try:
-            seen_accessions = {
+            db_seen = {
                 r["accession_number"]
                 for r in self.db.client.table("ipo")
                 .select("accession_number")
                 .execute().data
                 if r.get("accession_number")
             }
+
+            # Accessions present in the fetched batch
+            batch_acc_all = {f["accession_number"] for f in filings if f.get("accession_number")}
+
             before = len(filings)
-            filings = [
+            filtered_filings = [
                 f
                 for f in filings
                 if not f.get("accession_number")
-                or f["accession_number"] not in seen_accessions
+                or f["accession_number"] not in db_seen
             ]
-            skipped = before - len(filings)
-            if skipped:
-                print(f"[EFTS] Skipping {skipped} filings already in database (global accession check).")
+            skipped_count = before - len(filtered_filings)
+            if skipped_count:
+                print(f"[EFTS] Skipping {skipped_count} filings already in database (global accession check).")
+
+            # NEW: mark the ones we filtered out so we don't re-evaluate them today
+            filtered_acc = {f.get("accession_number") for f in filtered_filings if f.get("accession_number")}
+            skipped_acc_today = batch_acc_all - filtered_acc
+            if skipped_acc_today:
+                try:
+                    added = self.cache.bulk_seed_processed(skipped_acc_today)
+                    if added:
+                        print(f"[CACHE] Marked {added} already-in-DB accessions as seen today")
+                except Exception as e:
+                    print(f"[WARN] Could not mark skipped accessions in cache: {e}")
+
+            filings = filtered_filings
+
         except Exception as e:
             print(f"[WARN] Daytime global de-dupe failed: {e}")
 
@@ -250,25 +275,41 @@ class Pipeline:
     def reconcile_daily_index(self, ds: str) -> None:
         filings = self.daily.fetch_for_date(ds)
 
-        # Keep DB de-dupe here as well (nightly)
+        # Keep DB de-dupe here as well (nightly) and mark skipped ones
         try:
-            seen_accessions = {
+            db_seen = {
                 r["accession_number"]
                 for r in self.db.client.table("ipo")
                 .select("accession_number")
                 .execute().data
                 if r.get("accession_number")
             }
+
+            batch_acc_all = {f["accession_number"] for f in filings if f.get("accession_number")}
+
             before = len(filings)
-            filings = [
+            filtered_filings = [
                 f
                 for f in filings
                 if not f.get("accession_number")
-                or f["accession_number"] not in seen_accessions
+                or f["accession_number"] not in db_seen
             ]
-            skipped = before - len(filings)
-            if skipped:
-                print(f"[DAILY] Skipping {skipped} filings already in database (global accession check).")
+            skipped_count = before - len(filtered_filings)
+            if skipped_count:
+                print(f"[DAILY] Skipping {skipped_count} filings already in database (global accession check).")
+
+            filtered_acc = {f.get("accession_number") for f in filtered_filings if f.get("accession_number")}
+            skipped_acc_today = batch_acc_all - filtered_acc
+            if skipped_acc_today:
+                try:
+                    added = self.cache.bulk_seed_processed(skipped_acc_today)
+                    if added:
+                        print(f"[CACHE] Marked {added} already-in-DB accessions as seen today (nightly)")
+                except Exception as e:
+                    print(f"[WARN] Could not mark nightly skipped accessions in cache: {e}")
+
+            filings = filtered_filings
+
         except Exception as e:
             print(f"[WARN] Nightly global de-dupe failed: {e}")
 
