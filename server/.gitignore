@@ -6,3 +6,4 @@ __pycache__/
 server/venv/
 server/prod/.env
 server/logs/
+venv/
