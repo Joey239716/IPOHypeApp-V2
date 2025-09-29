@@ -115,10 +115,10 @@ export default function MainPage() {
     const fetchEverything = async () => {
       try {
         const { data } = await supabase.auth.getUser();
+        const currentUser = data.user;
+        setUser(currentUser);
 
-        setUser(data.user);
-
-        const isGuest = !data.user;
+        const isGuest = !currentUser;
         const baseUrl = isGuest
           ? "https://ipo-api.theipostreet.workers.dev/api/public"
           : "/api/upcoming";
@@ -132,21 +132,21 @@ export default function MainPage() {
 
         setDataSource(json.source === "supabase" ? "supabase" : "kv");
 
-        if (data.user && json.source === "supabase") {
+        if (currentUser && json.source === "supabase") {
           const { data: watchlistData, error: watchlistError } = await supabase
             .from("watchlist")
             .select("cik")
-            .eq("user_id", data.user.id);
+            .eq("user_id", currentUser.id);
 
           if (!watchlistError) {
-            setStarred(new Set(watchlistData.map((row) => row.cik)));
+            setStarred(new Set(watchlistData.map((row) => String(row.cik))));
           } else {
             console.error("Watchlist fetch error:", watchlistError.message);
           }
         }
 
         const mapped: IPO[] = json.rows.map((r: any) => ({
-          cik: r.cik ?? "",
+          cik: String(r.cik ?? ""),
           ticker: r.ticker ?? "",
           companyName: r.company_name ?? "",
           exchange: r.exchange ?? "",
@@ -176,7 +176,7 @@ export default function MainPage() {
         console.error("[MainPage ERROR]", e.message || e);
         setError(e.message || "Failed to load IPOs");
       } finally {
-        setLoading(false); // ✅ This guarantees table appears
+        setLoading(false);
       }
     };
 
