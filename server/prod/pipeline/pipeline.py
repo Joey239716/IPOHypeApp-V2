@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime
+import time
+import random
 from typing import Any, List
 from zoneinfo import ZoneInfo
 
@@ -14,11 +16,51 @@ from ..services.ai_analysis import AnalyzeIPO
 from ..services.daily_cache import DailyCache  # Redis daily cache
 from ..efts.fetcher import EFTSFetcher
 from ..edgar.daily_index import DailyIndexChecker
+from ..services.kv_sync_service import KVSyncService
 
-# Only analyze these amendment forms with GPT (kept for future use)
+# Only analyze these amendment forms with GPT
 FORMS_TO_ANALYZE = {"S-1/A", "F-1/A"}
 
 ET = ZoneInfo("America/Toronto")
+
+
+def _retry(callable_fn, *, retries: int = 3, base_delay: float = 0.5, max_delay: float = 8.0):
+    """
+    Minimal retry helper with exponential backoff + jitter (no external deps).
+    - callable_fn: zero-arg function to execute (wrap your call in a lambda).
+    - retries: total attempts (including first).
+    Raises the last exception if all attempts fail.
+    """
+    attempt = 1
+    delay = base_delay
+    while True:
+        try:
+            return callable_fn()
+        except Exception as e:
+            if attempt >= retries:
+                raise
+            sleep_for = min(max_delay, delay * random.uniform(0.5, 1.5))
+            print(f"[RETRY] Attempt {attempt} failed: {e}. Retrying in {sleep_for:.2f}s...")
+            time.sleep(sleep_for)
+            delay = min(max_delay, delay * 2)
+            attempt += 1
+
+
+def _is_acquisition_corp(name: str | None) -> bool:
+    return bool(name) and ("acquisition" in name.lower())
+
+
+def _cap_ok(market_cap: Any, threshold: float = 50_000_000.0) -> bool:
+    """
+    Returns True if market_cap is present and >= threshold.
+    Safely parses strings/decimals; None/0/parse errors -> False.
+    """
+    if market_cap is None:
+        return False
+    try:
+        return float(market_cap) >= threshold
+    except Exception:
+        return False
 
 
 class Pipeline:
@@ -33,10 +75,13 @@ class Pipeline:
         self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.ai = AnalyzeIPO(self.db.client, self.openai)
 
+        # --- KV sync for public data API ---
+        self.kv = KVSyncService(self.db.client)
+
     @staticmethod
     def build_sec_html_url(cik: str, accession_number: str, primary_document: str) -> str:
         """Build a SEC Archives HTML URL from cik, accession_number, and primary_document."""
-        cik_nozero = str(int(cik))  # remove leading zeros
+        cik_nozero = str(int(cik))  # remove leading zeros / normalize
         acc_nodash = accession_number.replace("-", "")
         return f"https://www.sec.gov/Archives/edgar/data/{cik_nozero}/{acc_nodash}/{primary_document}"
 
@@ -46,10 +91,11 @@ class Pipeline:
             print("[INFO] No filings to process.")
             return
 
-        active = self.db.get_ipo_snapshot()  # dict keyed by normalized str(CIK)
+        # Snapshot of current IPO table state (keyed by normalized str(CIK))
+        active = self.db.get_ipo_snapshot()
 
         for f in filings:
-            cik = f.get("cik")
+            cik_raw = f.get("cik")
             form = f.get("form_type")
             date = f.get("date_filed")
             acc = f.get("accession_number")
@@ -57,48 +103,70 @@ class Pipeline:
             ticker = f.get("ticker")
             mainlink = f.get("mainlink")
             is_ipo_flag = f.get("is_ipo")
+            market_cap = f.get("market_cap")  # <— used for logo gating
 
-            # Ensure mainlink is built if missing and we have primary_document
-            if not mainlink and cik and acc and f.get("primary_document"):
-                mainlink = self.build_sec_html_url(cik, acc, f["primary_document"])
-                f["mainlink"] = mainlink
-
-            # --- BASIC FIELD CHECK ---
-            if not cik or not form or not date:
-                # NEW: mark skipped accessions so we don't see them again today
+            # --- BASIC FIELD CHECK + LOG FULL RECORD (Fix #6) ---
+            if not cik_raw or not form or not date:
+                print(f"[SKIP] Missing fields: {f}")
                 if acc:
-                    self.cache.mark_processed(acc)
+                    try:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                    except Exception as e:
+                        print(f"[WARN] Could not mark incomplete filing {acc} as processed: {e}")
                 continue
+
+            # Normalize CIK everywhere (Fix #5)
+            try:
+                cik = str(int(cik_raw))
+            except Exception:
+                print(f"[SKIP] Invalid CIK '{cik_raw}' in filing: {f}")
+                if acc:
+                    try:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                    except Exception as e:
+                        print(f"[WARN] Could not mark invalid-cik filing {acc} as processed: {e}")
+                continue
+
+            # Ensure mainlink is built if missing and we have primary_document (Fix #4)
+            if not mainlink and acc and f.get("primary_document"):
+                mainlink = self.build_sec_html_url(cik, acc, f["primary_document"])
+                f["mainlink"] = mainlink  # keep source dict consistent too
 
             # --- READ REDIS FIRST; SKIP IF ALREADY HANDLED TODAY ---
             if acc and self.cache.seen_today(acc):
                 print(f"[CACHE] skip (seen today): {acc} CIK={cik} form={form}")
                 continue
 
-            existing = active.get(str(cik))
+            existing = active.get(cik)
 
-            # Skip initial S-1 / F-1 if already processed
+            # Skip initial S-1 / F-1 if already processed (DB state) (still needed for transitions)
             if form in {"S-1", "F-1"} and existing:
                 print(f"[SKIP] Initial form {form} for existing CIK {cik} — already processed.")
-                # NEW: mark so we don't keep re-evaluating this all day
                 if acc:
-                    self.cache.mark_processed(acc)
+                    try:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                    except Exception as e:
+                        print(f"[WARN] Could not mark {acc} processed after initial skip: {e}")
                 continue
 
             # Ignore non-initial forms for new CIKs
             if not existing and form not in settings.INITIAL_FORMS:
                 print(f"[SKIP] Non-initial form {form} for new CIK {cik} — not tracked.")
-                # NEW: mark skip
                 if acc:
-                    self.cache.mark_processed(acc)
+                    try:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                    except Exception as e:
+                        print(f"[WARN] Could not mark {acc} processed after non-initial skip: {e}")
                 continue
 
-            # For initial forms, require IPO phrase detection
+            # For initial forms, require IPO phrase detection (is_ipo_flag)
             if form in settings.INITIAL_FORMS and not is_ipo_flag:
                 print(f"[SKIP] {form} for CIK {cik} — failed IPO phrase detection.")
-                # NEW: mark skip
                 if acc:
-                    self.cache.mark_processed(acc)
+                    try:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                    except Exception as e:
+                        print(f"[WARN] Could not mark {acc} processed after phrase skip: {e}")
                 continue
 
             # If we made it here, it's a valid new/updated IPO record
@@ -121,7 +189,8 @@ class Pipeline:
                 else:
                     stale = True
 
-                if stale:
+                # Try to refresh the logo BEFORE move (Fix #9) — but only if not an acquisition corp and cap >= $50M
+                if stale and not _is_acquisition_corp(name) and _cap_ok(market_cap, 50_000_000.0):
                     try:
                         cleaned = self.logo.clean_company_name(name or "")
                         domain = self.logo.search_domain(name or "", cleaned)
@@ -135,6 +204,16 @@ class Pipeline:
                                     logo_date = datetime.date.today().isoformat()
                     except Exception as e:
                         print(f"[WARN] Logo refresh before move failed for {cik}: {e}")
+                else:
+                    reason = []
+                    if not stale:
+                        reason.append("not stale")
+                    if _is_acquisition_corp(name):
+                        reason.append("acquisition corp")
+                    if not _cap_ok(market_cap, 50_000_000.0):
+                        reason.append("market_cap missing/<$50M")
+                    if reason:
+                        print(f"[LOGO] Skipping refresh before move for {name}: {', '.join(reason)}")
 
                 pub: dict[str, Any] = {
                     "cik": cik,
@@ -150,76 +229,111 @@ class Pipeline:
                 if logo_date:
                     pub["updated_logo_date"] = str(logo_date)[:10]
 
-                # DB writes
-                self.db.delete_ipo(cik)
-                self.db.move_to_public(pub)
-
-                # Mark in Redis only after successful DB writes
-                if acc:
-                    self.cache.mark_processed(acc)
-
-                print(f"[MOVE] {cik} → public_companies form={form} ticker={ticker}")
+                # Move (delete from IPO -> insert into public)
+                try:
+                    self.db.delete_ipo(cik)
+                    self.db.move_to_public(pub)
+                    print(f"[MOVE] {cik} → public_companies form={form} ticker={ticker}")
+                    if acc:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                except Exception as e:
+                    print(f"[ERROR] Failed to move {cik} to public companies: {e}")
                 continue
 
             # Withdrawals remove from IPO table
             if form == "RW" and existing:
-                self.db.delete_ipo(cik)
-
-                # Mark in Redis so we don't handle this RW again today
-                if acc:
-                    self.cache.mark_processed(acc)
-
-                print(f"[DELETE] {cik} withdrawn")
+                try:
+                    self.db.delete_ipo(cik)
+                    print(f"[DELETE] {cik} withdrawn")
+                    if acc:
+                        _retry(lambda: self.cache.mark_processed(acc))
+                except Exception as e:
+                    print(f"[ERROR] Failed to delete IPO {cik}: {e}")
                 continue
 
             # Upsert IPO row (new or update)
-            if existing or form in settings.INITIAL_FORMS:
-                rec: dict[str, Any] = {
-                    "cik": cik,
-                    "company_name": name,
-                    "ticker": ticker,
-                    "latest_filing_type": form,
-                    "latest_filing_date": date,
-                    "mainlink": mainlink,
-                    "is_ipo": True,
-                    "analyzed": False,  # flip to True after AI pipeline if you enable it
-                    "accession_number": acc,
-                    "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                }
+            # Preserve current analyzed flag (Fix #2 part 1)
+            already_analyzed = existing.get("analyzed", False) if existing and isinstance(existing, dict) else False
 
-                # DB write
-                self.db.upsert_ipo(rec)
+            rec: dict[str, Any] = {
+                "cik": cik,
+                "company_name": name,
+                "ticker": ticker,
+                "latest_filing_type": form,
+                "latest_filing_date": date,
+                "mainlink": mainlink,    # ensure mainlink is passed forward (Fix #4)
+                "is_ipo": True,
+                "analyzed": already_analyzed,
+                "accession_number": acc,
+                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+
+            # NOTE: upsert_ipo should be implemented with ON CONFLICT (accession_number) DO UPDATE
+            try:
+                _retry(lambda: self.db.upsert_ipo(rec))
                 print(f"[UPSERT] {cik} latest={form} ticker={ticker}")
-                active[str(cik)] = rec
-
-                # Mark in Redis after successful DB write
+                active[cik] = rec  # keep in-memory snapshot fresh
                 if acc:
-                    self.cache.mark_processed(acc)
+                    _retry(lambda: self.cache.mark_processed(acc))  # mark only after successful write (Fix #7)
+            except Exception as e:
+                print(f"[ERROR] Failed to upsert IPO {cik}: {e}")
+                continue  # do not proceed to logo or AI on failed upsert
 
-                try:
+            # Logo add/refresh (best-effort) — enforce acquisition + market_cap gate
+            try:
+                if not _is_acquisition_corp(name) and _cap_ok(market_cap, 50_000_000.0):
                     self.logo.add_logo_if_missing_or_stale(cik, name or "")
-                except Exception as e:
-                    print(f"[WARN] Logo update failed for {cik}: {e}")
+                else:
+                    reason = []
+                    if _is_acquisition_corp(name):
+                        reason.append("acquisition corp")
+                    if not _cap_ok(market_cap, 50_000_000.0):
+                        reason.append("market_cap missing/<$50M")
+                    if reason:
+                        print(f"[LOGO] Skipping add/refresh for {name}: {', '.join(reason)}")
+            except Exception as e:
+                print(f"[WARN] Logo update failed for {cik}: {e}")
 
-                # --- Optional AI integration (currently off) ---
-                # if form in FORMS_TO_ANALYZE and mainlink:
-                #     try:
-                #         already = self.db.get_ipo_by_cik(str(cik))
-                #         if already and already.get("analyzed"):
-                #             print(f"[AI] Skip analyze for CIK={cik} form={form}: already analyzed.")
-                #         else:
-                #             self.ai.analyze_one(cik=str(cik), filing_url=mainlink, company_name=name or "")
-                #     except Exception as e:
-                #         print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
+            # --- AI integration (enabled) ---
+            if form in FORMS_TO_ANALYZE and mainlink and not already_analyzed:
+                try:
+                    # Optional retry to make AI more resilient
+                    _retry(lambda: self.ai.analyze_one(
+                        cik=str(cik),
+                        filing_url=mainlink,
+                        company_name=name or "",
+                    ), retries=2, base_delay=1.0)
+                    print(f"[AI] Analyze complete for CIK={cik} form={form}")
+
+                    # Persist analyzed=True to DB (Fix #2 part 2) + guard in-memory map (Fix #1)
+                    rec["analyzed"] = True  # so any subsequent upserts in this run carry the flag
+                    try:
+                        _retry(lambda: self.db.client.table("ipo").update(
+                            {
+                                "analyzed": True,
+                                "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            }
+                        ).eq("cik", cik).execute())
+                        if cik in active and isinstance(active[cik], dict):
+                            active[cik]["analyzed"] = True  # guard to avoid KeyError (Fix #1)
+                    except Exception as e:
+                        print(f"[WARN] Could not set analyzed=True for CIK={cik}: {e}")
+
+                except Exception as e:
+                    print(f"[AI] Analyze failed for CIK={cik} form={form}: {e}")
+            elif already_analyzed:
+                print(f"[AI] Skip analyze for CIK={cik} form={form}: already analyzed.")
 
     # ----- daytime EFTS run (start/end inclusive, YYYY-MM-DD) -----
     def fetch_and_push(self, start_date: str, end_date: str) -> None:
         # Optional: warm today's cache once from DB so restarts don't reprocess earlier items
         try:
             today_iso = datetime.datetime.now(ET).date().isoformat()
-            warmed = self.cache.bulk_seed_processed(self.db.get_accessions_for_date(today_iso))
+            warmed = self.db.get_accessions_for_date(today_iso)
             if warmed:
-                print(f"[CACHE] Warmed {warmed} accessions for {today_iso}")
+                added = self.cache.bulk_seed_processed(warmed)
+                if added:
+                    print(f"[CACHE] Warmed {added} accessions for {today_iso}")
         except Exception as e:
             print(f"[WARN] Cache warm-up skipped: {e}")
 
@@ -229,88 +343,12 @@ class Pipeline:
 
         filings = self.fetcher.fetch(start_date, end_date, existing_ciks=existing_ciks)
 
-        # --- Global accession de-dupe (DB safety net) + mark skipped ones in Redis ---
-        try:
-            db_seen = {
-                r["accession_number"]
-                for r in self.db.client.table("ipo")
-                .select("accession_number")
-                .execute().data
-                if r.get("accession_number")
-            }
-
-            # Accessions present in the fetched batch
-            batch_acc_all = {f["accession_number"] for f in filings if f.get("accession_number")}
-
-            before = len(filings)
-            filtered_filings = [
-                f
-                for f in filings
-                if not f.get("accession_number")
-                or f["accession_number"] not in db_seen
-            ]
-            skipped_count = before - len(filtered_filings)
-            if skipped_count:
-                print(f"[EFTS] Skipping {skipped_count} filings already in database (global accession check).")
-
-            # NEW: mark the ones we filtered out so we don't re-evaluate them today
-            filtered_acc = {f.get("accession_number") for f in filtered_filings if f.get("accession_number")}
-            skipped_acc_today = batch_acc_all - filtered_acc
-            if skipped_acc_today:
-                try:
-                    added = self.cache.bulk_seed_processed(skipped_acc_today)
-                    if added:
-                        print(f"[CACHE] Marked {added} already-in-DB accessions as seen today")
-                except Exception as e:
-                    print(f"[WARN] Could not mark skipped accessions in cache: {e}")
-
-            filings = filtered_filings
-
-        except Exception as e:
-            print(f"[WARN] Daytime global de-dupe failed: {e}")
-
+        # Direct call — rely on Redis for day-scope dedupe, DB for state transitions
         self._process_filings(filings)
+        self.kv.push_ipo_table()
 
     # ----- nightly master daily-index reconcile (ds = YYYYMMDD) -----
     def reconcile_daily_index(self, ds: str) -> None:
         filings = self.daily.fetch_for_date(ds)
-
-        # Keep DB de-dupe here as well (nightly) and mark skipped ones
-        try:
-            db_seen = {
-                r["accession_number"]
-                for r in self.db.client.table("ipo")
-                .select("accession_number")
-                .execute().data
-                if r.get("accession_number")
-            }
-
-            batch_acc_all = {f["accession_number"] for f in filings if f.get("accession_number")}
-
-            before = len(filings)
-            filtered_filings = [
-                f
-                for f in filings
-                if not f.get("accession_number")
-                or f["accession_number"] not in db_seen
-            ]
-            skipped_count = before - len(filtered_filings)
-            if skipped_count:
-                print(f"[DAILY] Skipping {skipped_count} filings already in database (global accession check).")
-
-            filtered_acc = {f.get("accession_number") for f in filtered_filings if f.get("accession_number")}
-            skipped_acc_today = batch_acc_all - filtered_acc
-            if skipped_acc_today:
-                try:
-                    added = self.cache.bulk_seed_processed(skipped_acc_today)
-                    if added:
-                        print(f"[CACHE] Marked {added} already-in-DB accessions as seen today (nightly)")
-                except Exception as e:
-                    print(f"[WARN] Could not mark nightly skipped accessions in cache: {e}")
-
-            filings = filtered_filings
-
-        except Exception as e:
-            print(f"[WARN] Nightly global de-dupe failed: {e}")
-
+        # Direct call — rely on Redis for day-scope dedupe, DB for state transitions
         self._process_filings(filings)

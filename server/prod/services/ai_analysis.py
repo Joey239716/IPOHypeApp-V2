@@ -98,21 +98,21 @@ class AnalyzeIPO:
                 "  \"<number>$\"  OR  \"<number>$ - <number>$\"\n"
                 "- No commas. If placeholder/ambiguous → \"unknown\".\n\n"
                 "3) exchange (normalize to exactly one of):\n"
-                "- \"NASDAQ\", \"Nasdaq Capital Market\", \"Nasdaq Global Market\", \"Nasdaq Global Select Market\",\n"
-                "  \"NYSE\", \"NYSE American\", \"NYSE Arca\", \"Cboe\"\n"
+                "- \"NASDAQ\",\n"
+                "  \"NYSE\",\"CBOE\"\n"
                 "- Normalize examples:\n"
                 "  • \"The Nasdaq Stock Market LLC\", \"NASDAQ Stock Exchange\" → \"NASDAQ\"\n"
-                "  • \"Nasdaq CM\", \"Nasdaq Capital\" → \"Nasdaq Capital Market\"\n"
-                "  • \"Nasdaq Global\" → \"Nasdaq Global Market\"\n"
-                "  • \"Nasdaq Global Select\" → \"Nasdaq Global Select Market\"\n"
+                "  • \"Nasdaq CM\", \"Nasdaq Capital\" → \"NASDAQ\"\n"
+                "  • \"Nasdaq Global\" → \"NASDAQ\"\n"
+                "  • \"Nasdaq Global Select\" → \"NASDAQ\"\n"
                 "  • \"New York Stock Exchange\", \"The NYSE\" → \"NYSE\"\n"
-                "  • \"NYSE American LLC\" → \"NYSE American\"\n"
-                "  • \"NYSE Arca LLC\" → \"NYSE Arca\"\n"
-                "  • \"Cboe BZX/EDGX/EDGA Exchange, Inc.\" → \"Cboe\"\n"
+                "  • \"NYSE American LLC\" → \"NYSE\"\n"
+                "  • \"NYSE Arca LLC\" → \"NYSE\"\n"
+                "  • \"Cboe BZX/EDGX/EDGA Exchange, Inc.\" → \"CBOE\"\n"
                 "- If OTC-only or unclear → \"unknown\".\n"
                 "- Must not be a placeholder.\n\n"
                 "4) market_cap:\n"
-                "- Compute ONLY if BOTH post-IPO total shares outstanding AND a price (or range) exist.\n"
+                "- This should be the raise amount, Compute ONLY if BOTH post-IPO total shares outstanding AND a price (or range) exist.\n"
                 "- For price ranges, use midpoint. Multiply shares × price. Digits only; else \"unknown\".\n\n"
                 "------------------------------------------------------------\n"
                 "HARD VALIDATION (apply before output)\n"
@@ -139,9 +139,9 @@ class AnalyzeIPO:
 
             # Call GPT
             ai_resp = self.openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-nano",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0
+                temperature=1
             )
             content = ai_resp.choices[0].message.content.strip()
             if content.startswith("json"):

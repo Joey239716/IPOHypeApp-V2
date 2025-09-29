@@ -1,10 +1,8 @@
 // client/_app.tsx
-
 import type { AppProps } from 'next/app'
-import '@/styles/globals.css' // Make sure this path matches your CSS location
+import '@/styles/globals.css'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 
-// Load fonts with CSS variable support
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
