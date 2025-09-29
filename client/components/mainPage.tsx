@@ -116,7 +116,6 @@ export default function MainPage() {
       try {
         const { data } = await supabase.auth.getUser();
 
-        console.log("Current user:", data);
         setUser(data.user);
 
         const isGuest = !data.user;
@@ -133,11 +132,11 @@ export default function MainPage() {
 
         setDataSource(json.source === "supabase" ? "supabase" : "kv");
 
-        if (user && json.source === "supabase") {
+        if (data.user && json.source === "supabase") {
           const { data: watchlistData, error: watchlistError } = await supabase
             .from("watchlist")
             .select("cik")
-            .eq("user_id", user.id);
+            .eq("user_id", data.user.id);
 
           if (!watchlistError) {
             setStarred(new Set(watchlistData.map((row) => row.cik)));

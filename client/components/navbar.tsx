@@ -31,7 +31,6 @@ export default function Navbar() {
     // Fetch logged-in user
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
-      console.log("Fetched user:", data);
       setUser(data.user);
     };
     fetchUser();
