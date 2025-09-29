@@ -1,4 +1,5 @@
 .env
+.env*
 /dev
 __pycache__/
 *.py[cod]
@@ -7,3 +8,8 @@ server/venv/
 server/prod/.env
 server/logs/
 venv/
+
+!.env.sample
+
+__pycache__
+__pycache__/*
