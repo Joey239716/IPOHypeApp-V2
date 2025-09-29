@@ -5,12 +5,7 @@ import Navbar from "./navbar";
 import { StarIcon as StarIconOutline } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { useRouter } from "next/navigation";
-import { createBrowserClient } from "@supabase/ssr";
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { supabase } from "@/lib/supabase-client";
 
 interface IPO {
   cik: string;
@@ -117,77 +112,77 @@ export default function MainPage() {
   };
 
   useEffect(() => {
-  const fetchEverything = async () => {
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setUser(user);
+    const fetchEverything = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
 
-      const isGuest = !user;
-      const baseUrl = isGuest
-        ? "https://ipo-api.theipostreet.workers.dev/api/public"
-        : "/api/upcoming";
+        console.log("Current user:", data);
+        setUser(data.user);
 
-      const res = await fetch(baseUrl, { cache: "no-store" });
-      const json = await res.json();
+        const isGuest = !data.user;
+        const baseUrl = isGuest
+          ? "https://ipo-api.theipostreet.workers.dev/api/public"
+          : "/api/upcoming";
 
-      if (!res.ok || !Array.isArray(json.rows)) {
-        throw new Error(json.error || "Unexpected response");
-      }
+        const res = await fetch(baseUrl, { cache: "no-store" });
+        const json = await res.json();
 
-      setDataSource(json.source === "supabase" ? "supabase" : "kv");
-
-      if (user && json.source === "supabase") {
-        const { data: watchlistData, error: watchlistError } = await supabase
-          .from("watchlist")
-          .select("cik")
-          .eq("user_id", user.id);
-
-        if (!watchlistError) {
-          setStarred(new Set(watchlistData.map((row) => row.cik)));
-        } else {
-          console.error("Watchlist fetch error:", watchlistError.message);
+        if (!res.ok || !Array.isArray(json.rows)) {
+          throw new Error(json.error || "Unexpected response");
         }
+
+        setDataSource(json.source === "supabase" ? "supabase" : "kv");
+
+        if (user && json.source === "supabase") {
+          const { data: watchlistData, error: watchlistError } = await supabase
+            .from("watchlist")
+            .select("cik")
+            .eq("user_id", user.id);
+
+          if (!watchlistError) {
+            setStarred(new Set(watchlistData.map((row) => row.cik)));
+          } else {
+            console.error("Watchlist fetch error:", watchlistError.message);
+          }
+        }
+
+        const mapped: IPO[] = json.rows.map((r: any) => ({
+          cik: r.cik ?? "",
+          ticker: r.ticker ?? "",
+          companyName: r.company_name ?? "",
+          exchange: r.exchange ?? "",
+          sharesOffered:
+            typeof r.shares_offered === "number"
+              ? r.shares_offered.toLocaleString()
+              : typeof r.shares_offered === "string"
+              ? r.shares_offered
+              : "",
+          sharePrice:
+            typeof r.share_price === "string"
+              ? r.share_price
+              : r.share_price ?? "",
+          estimatedIpoDate: r.estimated_ipo_date ?? "",
+          latestFilingType: r.latest_filing_type ?? "",
+          raiseAmount:
+            typeof r.market_cap === "number"
+              ? r.market_cap.toString()
+              : typeof r.market_cap === "string"
+              ? r.market_cap
+              : "",
+          logoUrl: r.logo_url ?? null,
+        }));
+
+        setIpos(mapped);
+      } catch (e: any) {
+        console.error("[MainPage ERROR]", e.message || e);
+        setError(e.message || "Failed to load IPOs");
+      } finally {
+        setLoading(false); // ✅ This guarantees table appears
       }
+    };
 
-      const mapped: IPO[] = json.rows.map((r: any) => ({
-        cik: r.cik ?? "",
-        ticker: r.ticker ?? "",
-        companyName: r.company_name ?? "",
-        exchange: r.exchange ?? "",
-        sharesOffered:
-          typeof r.shares_offered === "number"
-            ? r.shares_offered.toLocaleString()
-            : typeof r.shares_offered === "string"
-            ? r.shares_offered
-            : "",
-        sharePrice:
-          typeof r.share_price === "string"
-            ? r.share_price
-            : r.share_price ?? "",
-        estimatedIpoDate: r.estimated_ipo_date ?? "",
-        latestFilingType: r.latest_filing_type ?? "",
-        raiseAmount:
-          typeof r.market_cap === "number"
-            ? r.market_cap.toString()
-            : typeof r.market_cap === "string"
-            ? r.market_cap
-            : "",
-        logoUrl: r.logo_url ?? null,
-      }));
-
-      setIpos(mapped);
-    } catch (e: any) {
-      console.error("[MainPage ERROR]", e.message || e);
-      setError(e.message || "Failed to load IPOs");
-    } finally {
-      setLoading(false); // ✅ This guarantees table appears
-    }
-  };
-
-  fetchEverything();
-}, []);
+    fetchEverything();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 select-none caret-transparent">

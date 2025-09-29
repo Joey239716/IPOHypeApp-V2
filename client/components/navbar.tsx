@@ -1,59 +1,59 @@
-'use client'
+"use client";
 
-import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { Menu, X, Settings } from 'lucide-react'
-import { supabase } from '@/lib/supabase-client'
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Menu, X, Settings } from "lucide-react";
+import { supabase } from "@/lib/supabase-client";
 
 const navItems = [
-  { label: 'Home', href: '/' },
-  { label: 'About', href: '/about' },
-  { label: 'Watchlist', href: '/watchlist' },
-  { label: 'Contact', href: '/contact' },
-]
+  { label: "Home", href: "/" },
+  { label: "About", href: "/about" },
+  { label: "Watchlist", href: "/watchlist" },
+  { label: "Contact", href: "/contact" },
+];
 
 export default function Navbar() {
-  const pathname = usePathname()
-  const [isOpen, setIsOpen] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [darkMode, setDarkMode] = useState(false)
-  const [user, setUser] = useState<any>(null)
+  const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem('theme')
+    const stored = localStorage.getItem("theme");
     const isDark =
-      stored === 'dark' ||
-      (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)
-    setDarkMode(isDark)
-    document.documentElement.classList.toggle('dark', isDark)
+      stored === "dark" ||
+      (!stored && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    setDarkMode(isDark);
+    document.documentElement.classList.toggle("dark", isDark);
 
     // Fetch logged-in user
     const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser()
-      setUser(data.user)
-    }
-    fetchUser()
-  }, [])
+      const { data } = await supabase.auth.getUser();
+      console.log("Fetched user:", data);
+      setUser(data.user);
+    };
+    fetchUser();
+  }, []);
 
   const toggleDarkMode = () => {
-    const next = !darkMode
-    setDarkMode(next)
-    document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
-  }
+    const next = !darkMode;
+    setDarkMode(next);
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-  }
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   return (
     <nav className="sticky top-0 z-50 select-none">
       {/* Top navbar (md+) */}
       <div className="hidden md:block bg-white dark:bg-gray-900 transition-colors border-b-[0.5px] border-gray-200 dark:border-gray-500 pt-2.5 pb-3 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-end space-x-2 text-gray-700 dark:text-gray-300">
-
           {/* Settings dropdown */}
           <div className="relative">
             <button
@@ -65,16 +65,29 @@ export default function Navbar() {
 
             {settingsOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50">
-                <Link href="/settings/profile" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none">
+                <Link
+                  href="/settings/profile"
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none"
+                >
                   Profile
                 </Link>
-                <Link href="/settings/account" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none">
+                <Link
+                  href="/settings/account"
+                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none"
+                >
                   Account
                 </Link>
                 <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 select-none">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">Dark Mode</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-200">
+                    Dark Mode
+                  </span>
                   <label className="relative inline-flex items-center cursor-pointer select-none">
-                    <input type="checkbox" className="sr-only peer" checked={darkMode} onChange={toggleDarkMode} />
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={darkMode}
+                      onChange={toggleDarkMode}
+                    />
                     <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-blue-300 dark:bg-gray-700 rounded-full peer peer-checked:bg-blue-600 transition-colors" />
                     <div className="absolute left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5" />
                   </label>
@@ -85,9 +98,9 @@ export default function Navbar() {
 
           {/* Auth Buttons */}
           {user ? (
-           <button
-  onClick={handleLogout}
-  className="
+            <button
+              onClick={handleLogout}
+              className="
     group relative inline-flex items-center justify-center overflow-hidden rounded-md
     border border-[#0356a8] dark:border-gray-500 bg-[#0466c8] text-white
     px-2 py-1 font-medium transition-all hover:bg-[#0356a8]
@@ -95,9 +108,9 @@ export default function Navbar() {
     [box-shadow:0px_4px_1px_#034b8f] active:translate-y-[2px] active:shadow-none
     pb-1.5 pt-0.5
   "
->
-  Log Out
-</button>
+            >
+              Log Out
+            </button>
           ) : (
             <>
               <Link
@@ -121,7 +134,10 @@ export default function Navbar() {
       <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 transition-colors">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <Link href="/" className="text-xl font-bold text-gray-800 dark:text-gray-100 select-none caret-transparent focus:outline-none">
+            <Link
+              href="/"
+              className="text-xl font-bold text-gray-800 dark:text-gray-100 select-none caret-transparent focus:outline-none"
+            >
               Ipo Street
             </Link>
             <div className="hidden md:flex space-x-6">
@@ -131,15 +147,14 @@ export default function Navbar() {
                   href={item.href}
                   className={`text-base font-medium select-none caret-transparent focus:outline-none ${
                     pathname === item.href
-                      ? 'text-blue-600 dark:text-blue-400'
-                      : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400'
+                      ? "text-blue-600 dark:text-blue-400"
+                      : "text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
                   }`}
                 >
                   {item.label}
                 </Link>
               ))}
             </div>
-
 
             {/* Mobile menu toggle */}
             <div className="md:hidden">
@@ -151,7 +166,10 @@ export default function Navbar() {
                 {isOpen ? (
                   <X size={24} className="text-gray-800 dark:text-gray-100" />
                 ) : (
-                  <Menu size={24} className="text-gray-800 dark:text-gray-100" />
+                  <Menu
+                    size={24}
+                    className="text-gray-800 dark:text-gray-100"
+                  />
                 )}
               </button>
             </div>
@@ -168,8 +186,8 @@ export default function Navbar() {
                 onClick={() => setIsOpen(false)}
                 className={`block px-4 py-2 rounded-md select-none caret-transparent focus:outline-none ${
                   pathname === item.href
-                    ? 'bg-blue-50 dark:bg-gray-800 text-blue-600'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    ? "bg-blue-50 dark:bg-gray-800 text-blue-600"
+                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 }`}
               >
                 {item.label}
@@ -183,8 +201,8 @@ export default function Navbar() {
                 onClick={() => setIsOpen(false)}
                 className={`block px-4 py-2 rounded-md select-none caret-transparent focus:outline-none ${
                   pathname === item.href
-                    ? 'bg-blue-50 dark:bg-gray-800 text-blue-600'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    ? "bg-blue-50 dark:bg-gray-800 text-blue-600"
+                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
                 }`}
               >
                 {item.label}
@@ -194,7 +212,9 @@ export default function Navbar() {
             <hr className="border-t border-gray-300 dark:border-gray-700" />
 
             <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 select-none">
-              <span className="text-sm text-gray-700 dark:text-gray-200">Dark Mode</span>
+              <span className="text-sm text-gray-700 dark:text-gray-200">
+                Dark Mode
+              </span>
               <label className="relative inline-flex items-center cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -209,15 +229,15 @@ export default function Navbar() {
 
             {/* Auth Buttons (Mobile) */}
             {user ? (
-<button
-  onClick={() => {
-    handleLogout()
-    setIsOpen(false)
-  }}
-  className="block w-full text-left px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 select-none"
->
-  Log Out
-</button>
+              <button
+                onClick={() => {
+                  handleLogout();
+                  setIsOpen(false);
+                }}
+                className="block w-full text-left px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 select-none"
+              >
+                Log Out
+              </button>
             ) : (
               <>
                 <Link
@@ -240,5 +260,5 @@ export default function Navbar() {
         )}
       </div>
     </nav>
-  )
+  );
 }

@@ -8,6 +8,7 @@ server/venv/
 server/prod/.env
 server/logs/
 venv/
+*venv*
 
 !.env.sample
 
