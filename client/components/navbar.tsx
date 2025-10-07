@@ -8,9 +8,7 @@ import { supabase } from "@/lib/supabase-client";
 
 const navItems = [
   { label: "Home", href: "/" },
-  { label: "About", href: "/about" },
   { label: "Watchlist", href: "/watchlist" },
-  { label: "Contact", href: "/contact" },
 ];
 
 export default function Navbar() {
@@ -19,6 +17,7 @@ export default function Navbar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -44,8 +43,15 @@ export default function Navbar() {
   };
 
   const handleLogout = async () => {
+    setShowLogoutModal(true);
     await supabase.auth.signOut();
     setUser(null);
+
+    // Keep modal visible for 2 seconds
+    setTimeout(() => {
+      setShowLogoutModal(false);
+      window.location.href = "/";
+    }, 500);
   };
 
   return (
@@ -63,35 +69,41 @@ export default function Navbar() {
             </button>
 
             {settingsOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50">
-                <Link
-                  href="/settings/profile"
-                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none"
-                >
-                  Profile
-                </Link>
-                <Link
-                  href="/settings/account"
-                  className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 select-none focus:outline-none"
-                >
-                  Account
-                </Link>
-                <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 select-none">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">
-                    Dark Mode
-                  </span>
-                  <label className="relative inline-flex items-center cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      className="sr-only peer"
-                      checked={darkMode}
-                      onChange={toggleDarkMode}
-                    />
-                    <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-blue-300 dark:bg-gray-700 rounded-full peer peer-checked:bg-blue-600 transition-colors" />
-                    <div className="absolute left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5" />
-                  </label>
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setSettingsOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-50">
+                  <div className="block px-4 py-2 text-sm text-gray-400 dark:text-gray-500 cursor-not-allowed select-none">
+                    <div className="flex items-center justify-between">
+                      <span>Profile</span>
+                      <span className="text-xs italic">Coming Soon</span>
+                    </div>
+                  </div>
+                  <div className="block px-4 py-2 text-sm text-gray-400 dark:text-gray-500 cursor-not-allowed select-none">
+                    <div className="flex items-center justify-between">
+                      <span>Account</span>
+                      <span className="text-xs italic">Coming Soon</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 select-none">
+                    <span className="text-sm text-gray-700 dark:text-gray-200">
+                      Dark Mode
+                    </span>
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={darkMode}
+                        onChange={toggleDarkMode}
+                      />
+                      <div className="w-10 h-5 bg-gray-200 peer-focus:ring-2 peer-focus:ring-blue-300 dark:bg-gray-700 rounded-full peer peer-checked:bg-blue-600 transition-colors" />
+                      <div className="absolute left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5" />
+                    </label>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
 
@@ -135,9 +147,14 @@ export default function Navbar() {
           <div className="flex items-center justify-between h-16">
             <Link
               href="/"
-              className="text-xl font-bold text-gray-800 dark:text-gray-100 select-none caret-transparent focus:outline-none"
+              className="flex items-center space-x-2 text-2xl font-bold text-gray-900 dark:text-white"
             >
-              Ipo Street
+              <span>IPO Street</span>
+                            <img
+                src="/logo.png" // or .png, etc.
+                alt="IPO Street Logo"
+                className="w-12 h-12 object-contain"
+              />
             </Link>
             <div className="hidden md:flex space-x-6">
               {navItems.map((item) => (
@@ -258,6 +275,42 @@ export default function Navbar() {
           </div>
         )}
       </div>
+
+      {/* Logout Success Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
+          <div className="relative w-[90%] max-w-sm rounded-lg border border-gray-200 dark:border-gray-700 p-6 shadow-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white transform transition-all duration-300 ease-out">
+            <div className="flex flex-col items-center">
+              <div className="w-16 h-16 flex items-center justify-center bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full mb-4">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-8 h-8"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">
+                Successfully Logged Out
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
+                You have been logged out of your account.
+              </p>
+              {/* Loading spinner */}
+              <div className="mt-4">
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

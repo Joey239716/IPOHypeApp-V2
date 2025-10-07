@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -21,42 +20,42 @@ export default function SignUpForm() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
 
-async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
-  e.preventDefault()
-  setLoading(true)
-  setError("")
+  async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
 
-  const formData = new FormData(e.currentTarget)
-  const email = formData.get("email") as string
-  const password = formData.get("password") as string
-  const firstName = formData.get("first-name") as string
-  const lastName = formData.get("last-name") as string
+    const formData = new FormData(e.currentTarget)
+    const email = formData.get("email") as string
+    const password = formData.get("password") as string
+    const firstName = formData.get("first-name") as string
+    const lastName = formData.get("last-name") as string
 
-  const { error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        first_name: firstName,
-        last_name: lastName,
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+        },
       },
-    },
-  })
+    })
 
-  if (error) {
-    const msg = error.message.toLowerCase()
+    if (error) {
+      const msg = error.message.toLowerCase()
 
-    if (msg.includes("user already registered") || msg.includes("already exists")) {
-      setError("ACCOUNT_EXISTS")
+      if (msg.includes("user already registered") || msg.includes("already exists")) {
+        setError("ACCOUNT_EXISTS")
+      } else {
+        setError(error.message)
+      }
     } else {
-      setError(error.message)
+      router.push("/verifyEmail")
     }
-  } else {
-    router.push("/verifyEmail")
-  }
 
-  setLoading(false)
-}
+    setLoading(false)
+  }
 
   async function handleGoogleSignup() {
     await supabase.auth.signInWithOAuth({
@@ -68,86 +67,187 @@ async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
   }
 
   return (
-    <Card className="mx-auto max-w-sm">
-      <CardHeader>
-        <CardTitle className="text-xl">Sign Up</CardTitle>
-        <CardDescription>
-          Enter your information to create an account.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSignup} className="grid gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="first-name">First name</Label>
+    <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 p-4 overflow-hidden">
+      {/* Decorative Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Large circles */}
+        <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-indigo-400/30 to-purple-400/30 rounded-full blur-3xl transform -translate-x-1/2 -translate-y-1/2"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-br from-pink-400/30 to-orange-400/30 rounded-full blur-3xl transform translate-x-1/2 translate-y-1/2"></div>
+        <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-gradient-to-br from-cyan-400/20 to-blue-400/20 rounded-full blur-2xl"></div>
+        
+        {/* Floating shapes */}
+        <div className="absolute top-20 right-1/4 w-32 h-32 border-4 border-indigo-300/40 rounded-2xl rotate-12 animate-float"></div>
+        <div className="absolute bottom-32 left-1/4 w-24 h-24 border-4 border-pink-300/40 rounded-full animate-float-delayed"></div>
+        <div className="absolute top-1/3 right-20 w-16 h-16 bg-gradient-to-br from-purple-400/30 to-pink-400/30 rounded-lg rotate-45 animate-float-slow"></div>
+      </div>
+
+      {/* Sign Up Card */}
+      <Card className="w-full max-w-lg shadow-2xl border-0 relative z-10 bg-white backdrop-blur-sm">
+        <CardHeader className="space-y-1 px-10 pt-10">
+          <CardTitle className="text-3xl font-semibold text-slate-900">
+            Create your account
+          </CardTitle>
+        </CardHeader>
+        
+        <CardContent className="px-10 pb-10">
+          <form onSubmit={handleSignup} className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="first-name" className="text-sm font-medium text-slate-700">
+                  First name
+                </Label>
+                <Input
+                  name="first-name"
+                  id="first-name"
+                  placeholder=""
+                  required
+                  className="h-11 px-3 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="last-name" className="text-sm font-medium text-slate-700">
+                  Last name
+                </Label>
+                <Input
+                  name="last-name"
+                  id="last-name"
+                  placeholder=""
+                  required
+                  className="h-11 px-3 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm font-medium text-slate-700">
+                Email
+              </Label>
               <Input
-                name="first-name"
-                id="first-name"
-                placeholder="Max"
+                name="email"
+                id="email"
+                type="email"
+                placeholder="m@example.com"
                 required
+                className="h-11 px-3 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="last-name">Last name</Label>
+
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-sm font-medium text-slate-700">
+                Password
+              </Label>
               <Input
-                name="last-name"
-                id="last-name"
-                placeholder="Robinson"
+                name="password"
+                id="password"
+                type="password"
                 required
+                className="h-11 px-3 border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
               />
             </div>
+
+            {error && (
+              <div className="py-3 px-4 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-800">
+                  {error === "ACCOUNT_EXISTS" ? (
+                    <>
+                      This account already exists and has been verified.{" "}
+                      <Link href="/login" className="underline font-medium">
+                        Log in instead.
+                      </Link>
+                    </>
+                  ) : (
+                    error
+                  )}
+                </p>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-sm hover:shadow transition-all"
+              disabled={loading}
+            >
+              {loading ? "Creating account..." : "Create an account"}
+            </Button>
+
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-2 text-slate-500">
+                  OR
+                </span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11 font-medium border-slate-300 hover:bg-slate-50 transition-colors"
+              onClick={handleGoogleSignup}
+            >
+              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+              </svg>
+              Sign up with Google
+            </Button>
+          </form>
+
+          <div className="mt-8 text-center">
+            <p className="text-sm text-slate-600">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="font-medium text-indigo-600 hover:text-indigo-500"
+              >
+                Sign in
+              </Link>
+            </p>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              name="email"
-              id="email"
-              type="email"
-              placeholder="m@example.com"
-              required
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="password">Password</Label>
-            <Input name="password" id="password" type="password" required />
-          </div>
+        </CardContent>
+      </Card>
 
-          {error && (
-  <p className="text-sm text-red-500">
-    {error === "ACCOUNT_EXISTS" ? (
-      <>
-        This account already exists and has been verified.{" "}
-        <Link href="/login" className="underline">
-          Log in instead.
-        </Link>
-      </>
-    ) : (
-      error
-    )}
-  </p>
-)}
-
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creating account..." : "Create an account"}
-          </Button>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={handleGoogleSignup}
-          >
-            Sign up with Google
-          </Button>
-        </form>
-
-        <div className="mt-4 text-center text-sm">
-          Already have an account?{" "}
-          <Link href="/login" className="underline">
-            Sign in
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+      <style jsx>{`
+        @keyframes float {
+          0%, 100% {
+            transform: translateY(0) rotate(12deg);
+          }
+          50% {
+            transform: translateY(-20px) rotate(12deg);
+          }
+        }
+        @keyframes float-delayed {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-30px);
+          }
+        }
+        @keyframes float-slow {
+          0%, 100% {
+            transform: translateY(0) rotate(45deg);
+          }
+          50% {
+            transform: translateY(-15px) rotate(45deg);
+          }
+        }
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+        .animate-float-delayed {
+          animation: float-delayed 8s ease-in-out infinite;
+          animation-delay: 1s;
+        }
+        .animate-float-slow {
+          animation: float-slow 10s ease-in-out infinite;
+          animation-delay: 2s;
+        }
+      `}</style>
+    </div>
   )
 }
