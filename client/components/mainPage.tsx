@@ -11,6 +11,23 @@ import { IPOStats } from "./IPOStats";
 import { useSorting } from "@/hooks/useSorting";
 import { usePagination } from "@/hooks/usePagination";
 import { IPO } from "@/lib/types";
+import type { User } from "@supabase/supabase-js"; // ✅ Supabase user type
+
+// Define response shape for rows coming from Supabase / KV
+interface IPOResponseRow {
+  cik?: string | number;
+  ticker?: string;
+  company_name?: string;
+  exchange?: string;
+  shares_offered?: string | number;
+  share_price?: string | number;
+  estimated_ipo_date?: string;
+  latest_filing_type?: string;
+  market_cap?: string | number;
+  logo_url?: string | null;
+  isStarred?: boolean;
+  source?: "supabase" | "kv";
+}
 
 export default function MainPage() {
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
@@ -18,15 +35,15 @@ export default function MainPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [starred, setStarred] = useState<Set<string>>(new Set());
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null); // ✅ typed user
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [starLoading, setStarLoading] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<"supabase" | "kv">("kv");
   const router = useRouter();
 
   const { sortedIpos, sortColumn, sortDirection, handleSort } = useSorting(ipos);
-  
-  // Use sortColumn and sortDirection as reset trigger for pagination
+
+  // Reset pagination when sort changes
   const sortTrigger = `${sortColumn}-${sortDirection}`;
   const {
     paginatedItems,
@@ -39,9 +56,10 @@ export default function MainPage() {
     goToPage,
     nextPage,
     prevPage,
-    changeItemsPerPage
+    changeItemsPerPage,
   } = usePagination(sortedIpos, sortTrigger);
 
+  // ⭐ Toggle watchlist
   const toggleStar = async (cik: string) => {
     if (!user) {
       setShowLoginModal(true);
@@ -80,8 +98,13 @@ export default function MainPage() {
         setStarred((prev) => new Set(prev).add(cik));
         setConfirmMessage(`${company} added to your Watchlist`);
       }
-    } catch (err: any) {
-      console.error("Watchlist update failed:", err.message || err);
+    } catch (err: unknown) {
+      // ✅ safer error handling
+      if (err instanceof Error) {
+        console.error("Watchlist update failed:", err.message);
+      } else {
+        console.error("Watchlist update failed:", err);
+      }
       setConfirmMessage("Something went wrong while updating your Watchlist.");
     } finally {
       setStarLoading(null);
@@ -89,6 +112,7 @@ export default function MainPage() {
     }
   };
 
+  // 📦 Fetch all IPOs and user info
   useEffect(() => {
     const fetchEverything = async () => {
       try {
@@ -109,18 +133,17 @@ export default function MainPage() {
         }
 
         setDataSource(json.source === "supabase" ? "supabase" : "kv");
-        
+
+        // ✅ type-safe starred mapping
         if (currentUser && Array.isArray(json.rows)) {
-          setStarred(
-            new Set(
-              json.rows
-                .filter((row: any) => row.isStarred)
-                .map((row: any) => String(row.cik))
-            )
-          );
+          const starredRows = (json.rows as IPOResponseRow[])
+            .filter((row) => row.isStarred)
+            .map((row) => String(row.cik));
+          setStarred(new Set(starredRows));
         }
 
-        const mapped: IPO[] = json.rows.map((r: any) => ({
+        // ✅ map to internal IPO type
+        const mapped: IPO[] = (json.rows as IPOResponseRow[]).map((r) => ({
           cik: String(r.cik ?? ""),
           ticker: r.ticker ?? "",
           companyName: r.company_name ?? "",
@@ -134,7 +157,9 @@ export default function MainPage() {
           sharePrice:
             typeof r.share_price === "string"
               ? r.share_price
-              : r.share_price ?? "",
+              : typeof r.share_price === "number"
+              ? r.share_price.toString()
+              : "",
           estimatedIpoDate: r.estimated_ipo_date ?? "",
           latestFilingType: r.latest_filing_type ?? "",
           raiseAmount:
@@ -144,13 +169,19 @@ export default function MainPage() {
               ? r.market_cap
               : "",
           logoUrl: r.logo_url ?? null,
-          rank: 0
+          rank: 0,
         }));
 
         setIpos(mapped);
-      } catch (e: any) {
-        console.error("[MainPage ERROR]", e.message || e);
-        setError(e.message || "Failed to load IPOs");
+      } catch (e: unknown) {
+        // ✅ safe handling for unknown error types
+        if (e instanceof Error) {
+          console.error("[MainPage ERROR]", e.message);
+          setError(e.message);
+        } else {
+          console.error("[MainPage ERROR]", e);
+          setError("Failed to load IPOs");
+        }
       } finally {
         setLoading(false);
       }
@@ -176,8 +207,10 @@ export default function MainPage() {
           <div className="text-sm text-red-500 mb-4">Error: {error}</div>
         )}
 
+        {/* 📊 Top Stats Section */}
         <IPOStats ipos={ipos} loading={loading} />
 
+        {/* 🖥️ Desktop Table */}
         <IPOTableDesktop
           loading={loading}
           sortedIpos={paginatedItems}
@@ -190,6 +223,7 @@ export default function MainPage() {
           onSort={handleSort}
         />
 
+        {/* 📱 Mobile Table */}
         <IPOTableMobile
           loading={loading}
           sortedIpos={paginatedItems}
@@ -213,7 +247,7 @@ export default function MainPage() {
           />
         )}
 
-        {/* Login Modal */}
+        {/* 🔐 Login Modal */}
         {showLoginModal && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-0 animate-backdrop-fade"
@@ -231,15 +265,11 @@ export default function MainPage() {
                 &times;
               </button>
 
-              <h2 className="text-lg font-semibold mb-2">
-                To add your first IPO
-              </h2>
+              <h2 className="text-lg font-semibold mb-2">To add your first IPO</h2>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-1">
                 Sign up to unlock Watchlist features and track IPOs you care about.
               </p>
-              <p className="text-sm text-green-500 font-medium mb-4">
-                It's free.
-              </p>
+              <p className="text-sm text-green-500 font-medium mb-4">It&apos;s free.</p>
 
               <div className="flex justify-end">
                 <button
@@ -253,7 +283,7 @@ export default function MainPage() {
           </div>
         )}
 
-        {/* Confirmation Modal */}
+        {/* 🌟 Confirmation Modal */}
         {confirmMessage && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-0 animate-backdrop-fade"

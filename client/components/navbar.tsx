@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X, Settings } from "lucide-react";
 import { supabase } from "@/lib/supabase-client";
+import type { User } from "@supabase/supabase-js"; // ✅ use official Supabase User type
 
 const navItems = [
   { label: "Home", href: "/" },
@@ -16,10 +17,11 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null); // ✅ no more `any`
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
+    // Initialize theme preference
     const stored = localStorage.getItem("theme");
     const isDark =
       stored === "dark" ||
@@ -30,7 +32,7 @@ export default function Navbar() {
     // Fetch logged-in user
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
-      setUser(data.user);
+      setUser(data.user ?? null);
     };
     fetchUser();
   }, []);
@@ -44,14 +46,22 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     setShowLogoutModal(true);
-    await supabase.auth.signOut();
-    setUser(null);
-
-    // Keep modal visible for 2 seconds
-    setTimeout(() => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      // Keep modal visible briefly before redirect
+      setTimeout(() => {
+        setShowLogoutModal(false);
+        window.location.href = "/";
+      }, 500);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        console.error("Logout failed:", err.message);
+      } else {
+        console.error("Logout failed:", err);
+      }
       setShowLogoutModal(false);
-      window.location.href = "/";
-    }, 500);
+    }
   };
 
   return (
@@ -59,7 +69,7 @@ export default function Navbar() {
       {/* Top navbar (md+) */}
       <div className="hidden md:block bg-white dark:bg-gray-900 transition-colors border-b-[0.5px] border-gray-200 dark:border-gray-500 pt-2.5 pb-3 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-end space-x-2 text-gray-700 dark:text-gray-300">
-          {/* Settings dropdown */}
+          {/* ⚙️ Settings dropdown */}
           <div className="relative">
             <button
               onClick={() => setSettingsOpen(!settingsOpen)}
@@ -107,18 +117,11 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Auth Buttons */}
+          {/* 🔐 Auth Buttons */}
           {user ? (
             <button
               onClick={handleLogout}
-              className="
-    group relative inline-flex items-center justify-center overflow-hidden rounded-md
-    border border-[#0356a8] dark:border-gray-500 bg-[#0466c8] text-white
-    px-2 py-1 font-medium transition-all hover:bg-[#0356a8]
-    select-none caret-transparent focus:outline-none cursor-pointer
-    [box-shadow:0px_4px_1px_#034b8f] active:translate-y-[2px] active:shadow-none
-    pb-1.5 pt-0.5
-  "
+              className="group relative inline-flex items-center justify-center overflow-hidden rounded-md border border-[#0356a8] dark:border-gray-500 bg-[#0466c8] text-white px-2 py-1 font-medium transition-all hover:bg-[#0356a8] select-none caret-transparent focus:outline-none cursor-pointer [box-shadow:0px_4px_1px_#034b8f] active:translate-y-[2px] active:shadow-none pb-1.5 pt-0.5"
             >
               Log Out
             </button>
@@ -149,13 +152,14 @@ export default function Navbar() {
               href="/"
               className="flex items-center space-x-2 text-2xl font-bold text-gray-900 dark:text-white"
             >
-              <span>IPO Street</span>
-                            <img
-                src="/logo.png" // or .png, etc.
+              <img
+                src="/logo.png"
                 alt="IPO Street Logo"
-                className="w-12 h-12 object-contain"
+                className="w-10 h-10 object-contain"
               />
+              <span>IPO Street</span>
             </Link>
+
             <div className="hidden md:flex space-x-6">
               {navItems.map((item) => (
                 <Link
@@ -172,7 +176,7 @@ export default function Navbar() {
               ))}
             </div>
 
-            {/* Mobile menu toggle */}
+            {/* 📱 Mobile menu toggle */}
             <div className="md:hidden">
               <button
                 onClick={() => setIsOpen(!isOpen)}
@@ -182,17 +186,14 @@ export default function Navbar() {
                 {isOpen ? (
                   <X size={24} className="text-gray-800 dark:text-gray-100" />
                 ) : (
-                  <Menu
-                    size={24}
-                    className="text-gray-800 dark:text-gray-100"
-                  />
+                  <Menu size={24} className="text-gray-800 dark:text-gray-100" />
                 )}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Mobile dropdown */}
+        {/* 📱 Mobile dropdown */}
         {isOpen && (
           <div className="md:hidden px-4 pb-4 bg-white dark:bg-gray-900 space-y-3">
             {navItems.map((item) => (
@@ -210,23 +211,9 @@ export default function Navbar() {
               </Link>
             ))}
 
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsOpen(false)}
-                className={`block px-4 py-2 rounded-md select-none caret-transparent focus:outline-none ${
-                  pathname === item.href
-                    ? "bg-blue-50 dark:bg-gray-800 text-blue-600"
-                    : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-
             <hr className="border-t border-gray-300 dark:border-gray-700" />
 
+            {/* 🌙 Dark mode toggle (mobile) */}
             <div className="flex items-center justify-between px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 select-none">
               <span className="text-sm text-gray-700 dark:text-gray-200">
                 Dark Mode
@@ -243,7 +230,7 @@ export default function Navbar() {
               </label>
             </div>
 
-            {/* Auth Buttons (Mobile) */}
+            {/* 🔐 Auth Buttons (mobile) */}
             {user ? (
               <button
                 onClick={() => {
@@ -276,7 +263,7 @@ export default function Navbar() {
         )}
       </div>
 
-      {/* Logout Success Modal */}
+      {/* ✅ Logout Success Modal */}
       {showLogoutModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
           <div className="relative w-[90%] max-w-sm rounded-lg border border-gray-200 dark:border-gray-700 p-6 shadow-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-white transform transition-all duration-300 ease-out">
@@ -303,9 +290,8 @@ export default function Navbar() {
               <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
                 You have been logged out of your account.
               </p>
-              {/* Loading spinner */}
               <div className="mt-4">
-                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
             </div>
           </div>

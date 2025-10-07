@@ -4,6 +4,7 @@ import Navbar from "@/components/navbar";
 import { supabase } from "@/lib/supabase-client";
 import { exchangeBadgeClasses, formatCurrency } from "@/lib/ipo-utils";
 
+// ✅ Define a strong type for the expected API response
 interface CompanyData {
   cik: string;
   ticker: string;
@@ -23,7 +24,7 @@ interface CompanyData {
 export default function CompanyPage() {
   const router = useRouter();
   const { cik } = router.query;
-  
+
   const [company, setCompany] = useState<CompanyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,8 +34,9 @@ export default function CompanyPage() {
       if (!cik || typeof cik !== "string") return;
 
       try {
-        // Always use the worker endpoint since it supports ?cik parameter
-        const baseUrl = `https://ipo-api.theipostreet.workers.dev/api/public?cik=${cik}`;
+        const baseUrl = `https://ipo-api.theipostreet.workers.dev/api/public?cik=${encodeURIComponent(
+          cik
+        )}`;
 
         const res = await fetch(baseUrl, { cache: "no-store" });
         const json = await res.json();
@@ -43,10 +45,17 @@ export default function CompanyPage() {
           throw new Error(json.error || "Failed to load company data");
         }
 
-        setCompany(json);
-      } catch (e: any) {
-        console.error("[Company Page ERROR]", e.message || e);
-        setError(e.message || "Failed to load company");
+        // ✅ Safely cast and validate response
+        setCompany(json as CompanyData);
+      } catch (e: unknown) {
+        // ✅ Type-safe error handling
+        if (e instanceof Error) {
+          console.error("[Company Page ERROR]", e.message);
+          setError(e.message);
+        } else {
+          console.error("[Company Page ERROR]", e);
+          setError("Failed to load company data");
+        }
       } finally {
         setLoading(false);
       }
@@ -104,12 +113,21 @@ export default function CompanyPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-      {/* Floating background objects for glassmorphism effect */}
+      {/* Floating glassy background orbs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-72 h-72 bg-blue-400/10 dark:bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute top-40 right-20 w-96 h-96 bg-purple-400/10 dark:bg-purple-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-        <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-pink-400/10 dark:bg-pink-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
-        <div className="absolute top-1/2 right-1/4 w-64 h-64 bg-cyan-400/10 dark:bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1.5s' }}></div>
+        <div
+          className="absolute top-40 right-20 w-96 h-96 bg-purple-400/10 dark:bg-purple-500/5 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        ></div>
+        <div
+          className="absolute bottom-20 left-1/3 w-80 h-80 bg-pink-400/10 dark:bg-pink-500/5 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "2s" }}
+        ></div>
+        <div
+          className="absolute top-1/2 right-1/4 w-64 h-64 bg-cyan-400/10 dark:bg-cyan-500/5 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1.5s" }}
+        ></div>
       </div>
 
       <Navbar />
@@ -135,7 +153,9 @@ export default function CompanyPage() {
                 </span>
               )}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500 dark:text-gray-400">Exchange:</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  Exchange:
+                </span>
                 <span
                   className={`inline-block px-2 py-1 rounded-full text-xs font-semibold backdrop-blur-sm ${exchangeBadgeClasses(
                     company.exchange
@@ -150,7 +170,7 @@ export default function CompanyPage() {
             </div>
           </div>
 
-          {/* IPO Details - 6 cards in 3 columns */}
+          {/* Detail cards */}
           <div className="border-l-4 border-blue-500 pl-3 backdrop-blur-xl bg-gradient-to-br from-white/90 via-blue-50/80 to-transparent dark:from-gray-800/90 dark:via-blue-950/30 dark:to-transparent rounded-r-xl shadow-xl border-t border-r border-b border-white/20 dark:border-gray-700/50 p-3">
             <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
               Share Price
@@ -174,7 +194,9 @@ export default function CompanyPage() {
               Expected Raise
             </div>
             <div className="text-xl font-bold text-gray-900 dark:text-white">
-              {company.market_cap ? formatCurrency(company.market_cap) : "Not available"}
+              {company.market_cap
+                ? formatCurrency(company.market_cap)
+                : "Not available"}
             </div>
           </div>
 
@@ -205,7 +227,6 @@ export default function CompanyPage() {
             </div>
           </div>
 
-          {/* SEC Filing Link */}
           {(company.latest_filing_url || company.mainlink) && (
             <div className="lg:col-span-3 backdrop-blur-xl bg-gradient-to-br from-white/90 via-cyan-50/80 to-blue-50/70 dark:from-gray-800/90 dark:via-gray-800/85 dark:to-gray-800/80 rounded-xl shadow-xl border border-white/20 dark:border-gray-700/50 p-4">
               <a
