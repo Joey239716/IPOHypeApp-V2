@@ -5,7 +5,12 @@ import { StarIcon as StarIconOutline } from "@heroicons/react/24/outline";
 import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { useRouter } from "next/navigation";
 import { IPO, SortColumn, SortDirection } from "@/lib/types";
-import { exchangeBadgeClasses, formatCurrency, formatPrice, withPlaceholder } from "@/lib/ipo-utils";
+import {
+  exchangeBadgeClasses,
+  formatCurrency,
+  formatPrice,
+  withPlaceholder,
+} from "@/lib/ipo-utils";
 
 interface Props {
   loading: boolean;
@@ -21,11 +26,13 @@ interface Props {
 
 const getDateColorClass = (date: string): string => {
   if (!date) return "";
-  
+
   const ipoDate = new Date(date);
   const today = new Date();
-  const diffDays = Math.ceil((ipoDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  
+  const diffDays = Math.ceil(
+    (ipoDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
   if (diffDays <= 7) return "text-green-600 dark:text-green-400 font-semibold";
   if (diffDays <= 30) return "text-blue-600 dark:text-blue-400 font-medium";
   if (diffDays <= 90) return "text-gray-700 dark:text-gray-300";
@@ -41,15 +48,15 @@ export const IPOTableDesktop: React.FC<Props> = ({
   sortColumn,
   sortDirection,
   onToggleStar,
-  onSort
+  onSort,
 }) => {
   const router = useRouter();
 
   const handleRowClick = (cik: string, e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (
-      target.closest('button') || 
-      target.closest('a') ||
+      target.closest("button") ||
+      target.closest("a") ||
       target.closest('[role="button"]')
     ) {
       return;
@@ -67,7 +74,7 @@ export const IPOTableDesktop: React.FC<Props> = ({
               <th className="px-2 py-4 w-[50px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-center whitespace-nowrap">
                 Rank
               </th>
-              <th 
+              <th
                 className="px-4 py-4 w-[180px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-left whitespace-nowrap cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group"
                 onClick={() => onSort("name")}
               >
@@ -79,7 +86,9 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     </span>
                   )}
                   {sortColumn !== "name" && (
-                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">↕</span>
+                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                      ↕
+                    </span>
                   )}
                 </div>
               </th>
@@ -88,7 +97,7 @@ export const IPOTableDesktop: React.FC<Props> = ({
                   <span>Exchange</span>
                 </div>
               </th>
-              <th 
+              <th
                 className="px-4 py-4 w-[110px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-right whitespace-nowrap cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group"
                 onClick={() => onSort("price")}
               >
@@ -100,11 +109,13 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     </span>
                   )}
                   {sortColumn !== "price" && (
-                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">↕</span>
+                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                      ↕
+                    </span>
                   )}
                 </div>
               </th>
-              <th 
+              <th
                 className="px-4 py-4 w-[120px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-right whitespace-nowrap cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group"
                 onClick={() => onSort("shares")}
               >
@@ -116,11 +127,13 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     </span>
                   )}
                   {sortColumn !== "shares" && (
-                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">↕</span>
+                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                      ↕
+                    </span>
                   )}
                 </div>
               </th>
-              <th 
+              <th
                 className="px-4 py-4 w-[130px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-right whitespace-nowrap cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group"
                 onClick={() => onSort("raise")}
               >
@@ -132,11 +145,13 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     </span>
                   )}
                   {sortColumn !== "raise" && (
-                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">↕</span>
+                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                      ↕
+                    </span>
                   )}
                 </div>
               </th>
-              <th 
+              <th
                 className="px-4 py-4 w-[120px] text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-200 text-right whitespace-nowrap cursor-pointer hover:text-gray-900 dark:hover:text-white transition-colors group"
                 onClick={() => onSort("date")}
               >
@@ -148,7 +163,9 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     </span>
                   )}
                   {sortColumn !== "date" && (
-                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">↕</span>
+                    <span className="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity text-sm">
+                      ↕
+                    </span>
                   )}
                 </div>
               </th>
@@ -233,7 +250,10 @@ export const IPOTableDesktop: React.FC<Props> = ({
                     <td className="px-2 py-5 text-sm text-center text-gray-800 dark:text-gray-100 align-middle font-medium">
                       {ipo.rank}
                     </td>
-                    <td className="px-4 py-5 text-sm text-left align-middle" title={ipo.companyName}>
+                    <td
+                      className="px-4 py-5 text-sm text-left align-middle"
+                      title={ipo.companyName}
+                    >
                       <div className="flex flex-col leading-tight">
                         <span className="font-semibold text-gray-900 dark:text-white">
                           {ipo.companyName}
@@ -246,7 +266,11 @@ export const IPOTableDesktop: React.FC<Props> = ({
                       </div>
                     </td>
                     <td className="px-4 py-5 text-sm text-right align-middle">
-                      <span className={`inline-block px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${exchangeBadgeClasses(ipo.exchange)}`}>
+                      <span
+                        className={`inline-block px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap ${exchangeBadgeClasses(
+                          ipo.exchange
+                        )}`}
+                      >
                         {ipo.exchange || "Unknown"}
                       </span>
                     </td>
@@ -267,7 +291,11 @@ export const IPOTableDesktop: React.FC<Props> = ({
                         </span>
                       )}
                     </td>
-                    <td className={`px-4 py-5 text-sm text-right align-middle ${getDateColorClass(ipo.estimatedIpoDate)}`}>
+                    <td
+                      className={`px-4 py-5 text-sm text-right align-middle ${getDateColorClass(
+                        ipo.estimatedIpoDate
+                      )}`}
+                    >
                       {withPlaceholder(ipo.estimatedIpoDate)}
                     </td>
                   </tr>
