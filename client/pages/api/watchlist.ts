@@ -1,3 +1,5 @@
+export const runtime = "edge";
+
 import type { NextApiRequest, NextApiResponse } from "next";
 import { createClient, type User } from "@supabase/supabase-js";
 

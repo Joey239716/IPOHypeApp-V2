@@ -1,4 +1,5 @@
 // pages/api/log-password-reset.ts
+export const runtime = "edge";
 
 import type { NextApiRequest, NextApiResponse } from "next"
 import { createClient } from "@supabase/supabase-js"
