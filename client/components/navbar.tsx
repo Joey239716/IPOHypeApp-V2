@@ -285,7 +285,7 @@ export default function Navbar() {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold mb-2">
-                Successfully Logged Out
+                Loggin Out
               </h3>
               <p className="text-sm text-gray-600 dark:text-gray-400 text-center">
                 You have been logged out of your account.
