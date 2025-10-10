@@ -27,12 +27,26 @@ export default async function handler(req: Request) {
     .split("; ")
     .reduce((acc, cookie) => {
       const [key, value] = cookie.split("=");
-      acc[key] = value;
+      if (key) acc[key] = value;
       return acc;
     }, {} as Record<string, string>);
 
-  // Look for Supabase auth token
-  const accessToken = cookies["sb-access-token"] || cookies["sb-gdxujcauucnofkcpcn-auth-token"];
+  // Find the Supabase auth token (try all possible cookie names)
+  let accessToken = "";
+  for (const [key, value] of Object.entries(cookies)) {
+    if (key.includes("-auth-token") || key === "sb-access-token") {
+      try {
+        // Supabase stores JWT in a JSON structure in the cookie
+        const parsed = JSON.parse(decodeURIComponent(value));
+        accessToken = parsed.access_token || parsed;
+        break;
+      } catch {
+        // If parsing fails, try using the value directly
+        accessToken = value;
+        break;
+      }
+    }
+  }
 
   // Create Supabase client
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
