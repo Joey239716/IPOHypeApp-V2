@@ -1,14 +1,12 @@
 // pages/api/upcoming.ts
 export const runtime = "edge";
 
-import type { NextApiRequest, NextApiResponse } from "next";
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const PUBLIC_KV_API = "https://ipo-api.theipostreet.workers.dev/api/public?all=true";
 
-// ✅ Define a lightweight type for IPO rows from KV
 interface KvIpoRow {
   cik: string;
   company_name: string;
@@ -19,36 +17,27 @@ interface KvIpoRow {
   latest_filing_type: string | null;
   market_cap: string | number | null;
   logo_url: string | null;
-  [key: string]: unknown; // allow safe extension for future KV fields
+  [key: string]: unknown;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        const cookieHeader = req.headers.cookie ?? "";
-        return cookieHeader
-          .split("; ")
-          .filter(Boolean)
-          .map((str) => {
-            const [name, ...rest] = str.split("=");
-            return { name, value: rest.join("=") };
-          });
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          const parts = [`${name}=${value}`];
-          if (options.path) parts.push(`Path=${options.path}`);
-          if (options.maxAge != null) parts.push(`Max-Age=${options.maxAge}`);
-          if (options.expires) parts.push(`Expires=${options.expires.toUTCString()}`);
-          if (options.httpOnly) parts.push("HttpOnly");
-          if (options.secure) parts.push("Secure");
-          if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
-          const prev = res.getHeader("Set-Cookie");
-          const prevArr = Array.isArray(prev) ? prev : prev ? [String(prev)] : [];
-          res.setHeader("Set-Cookie", prevArr.concat(parts.join("; ")));
-        });
-      },
+export default async function handler(req: Request) {
+  // Get auth token from cookies
+  const cookieHeader = req.headers.get("cookie") || "";
+  const cookies = cookieHeader
+    .split("; ")
+    .reduce((acc, cookie) => {
+      const [key, value] = cookie.split("=");
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
+
+  // Look for Supabase auth token
+  const accessToken = cookies["sb-access-token"] || cookies["sb-gdxujcauucnofkcpcn-auth-token"];
+
+  // Create Supabase client
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: {
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
     },
   });
 
@@ -57,7 +46,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return res.status(401).json({ rows: [], error: "Unauthorized" });
+    return new Response(JSON.stringify({ rows: [], error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   // 1️⃣ Fetch from KV
@@ -68,9 +60,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     kvRows = Array.isArray(kvJson.rows) ? (kvJson.rows as KvIpoRow[]) : [];
   } catch (err) {
     console.error("[KV ERROR]", err);
-    return res
-      .status(500)
-      .json({ rows: [], error: "Failed to fetch IPOs from KV" });
+    return new Response(
+      JSON.stringify({ rows: [], error: "Failed to fetch IPOs from KV" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   // 2️⃣ Fetch watchlist CIKs from Supabase
@@ -81,9 +77,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (watchlistError) {
     console.error("[WATCHLIST ERROR]", watchlistError.message);
-    return res
-      .status(500)
-      .json({ rows: [], error: "Failed to fetch watchlist" });
+    return new Response(
+      JSON.stringify({ rows: [], error: "Failed to fetch watchlist" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const starredCiks = new Set(watchlist.map((row) => row.cik));
@@ -95,8 +95,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }));
 
   // 4️⃣ Respond
-  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate");
-  return res
-    .status(200)
-    .json({ rows: enrichedRows, source: "kv+supabase" });
+  return new Response(JSON.stringify({ rows: enrichedRows, source: "kv+supabase" }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "s-maxage=60, stale-while-revalidate",
+    },
+  });
 }
