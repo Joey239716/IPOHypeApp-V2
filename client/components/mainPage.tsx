@@ -121,58 +121,107 @@ export default function MainPage() {
         setUser(currentUser);
 
         const isGuest = !currentUser;
-        const baseUrl = isGuest
-          ? "https://ipo-api.theipostreet.workers.dev/api/public?all=true"
-          : "/api/upcoming?all=true";
 
-        const res = await fetch(baseUrl, { cache: "no-store" });
-        const json = await res.json();
+        if (isGuest) {
+          // Guest users: fetch from KV API
+          const res = await fetch("https://ipo-api.theipostreet.workers.dev/api/public?all=true", {
+            cache: "no-store"
+          });
+          const json = await res.json();
 
-        if (!res.ok || !Array.isArray(json.rows)) {
-          throw new Error(json.error || "Unexpected response");
+          if (!res.ok || !Array.isArray(json.rows)) {
+            throw new Error(json.error || "Unexpected response");
+          }
+
+          setDataSource("kv");
+
+          const mapped: IPO[] = (json.rows as IPOResponseRow[]).map((r) => ({
+            cik: String(r.cik ?? ""),
+            ticker: r.ticker ?? "",
+            companyName: r.company_name ?? "",
+            exchange: r.exchange ?? "",
+            sharesOffered:
+              typeof r.shares_offered === "number"
+                ? r.shares_offered.toLocaleString()
+                : typeof r.shares_offered === "string"
+                ? r.shares_offered
+                : "",
+            sharePrice:
+              typeof r.share_price === "string"
+                ? r.share_price
+                : typeof r.share_price === "number"
+                ? r.share_price.toString()
+                : "",
+            estimatedIpoDate: r.estimated_ipo_date ?? "",
+            latestFilingType: r.latest_filing_type ?? "",
+            raiseAmount:
+              typeof r.market_cap === "number"
+                ? r.market_cap.toString()
+                : typeof r.market_cap === "string"
+                ? r.market_cap
+                : "",
+            logoUrl: r.logo_url ?? null,
+            rank: 0,
+          }));
+
+          setIpos(mapped);
+        } else {
+          // Logged-in users: fetch from KV API + watchlist from Supabase (same pattern as navbar/watchlist)
+          // Fetch IPO data from KV
+          const kvRes = await fetch("https://ipo-api.theipostreet.workers.dev/api/public?all=true", {
+            cache: "no-store"
+          });
+          const kvJson = await kvRes.json();
+
+          if (!kvRes.ok || !Array.isArray(kvJson.rows)) {
+            throw new Error(kvJson.error || "Unexpected response");
+          }
+
+          // Fetch user's watchlist from Supabase
+          const { data: watchlist, error: watchlistError } = await supabase
+            .from("watchlist")
+            .select("cik")
+            .eq("user_id", currentUser.id);
+
+          if (watchlistError) {
+            throw new Error(watchlistError.message);
+          }
+
+          const starredCiks = new Set(watchlist?.map((row) => row.cik) ?? []);
+          setStarred(starredCiks);
+          setDataSource("kv");
+
+          const mapped: IPO[] = (kvJson.rows as IPOResponseRow[]).map((r) => ({
+            cik: String(r.cik ?? ""),
+            ticker: r.ticker ?? "",
+            companyName: r.company_name ?? "",
+            exchange: r.exchange ?? "",
+            sharesOffered:
+              typeof r.shares_offered === "number"
+                ? r.shares_offered.toLocaleString()
+                : typeof r.shares_offered === "string"
+                ? r.shares_offered
+                : "",
+            sharePrice:
+              typeof r.share_price === "string"
+                ? r.share_price
+                : typeof r.share_price === "number"
+                ? r.share_price.toString()
+                : "",
+            estimatedIpoDate: r.estimated_ipo_date ?? "",
+            latestFilingType: r.latest_filing_type ?? "",
+            raiseAmount:
+              typeof r.market_cap === "number"
+                ? r.market_cap.toString()
+                : typeof r.market_cap === "string"
+                ? r.market_cap
+                : "",
+            logoUrl: r.logo_url ?? null,
+            rank: 0,
+          }));
+
+          setIpos(mapped);
         }
-
-        setDataSource(json.source === "supabase" ? "supabase" : "kv");
-
-        // ✅ type-safe starred mapping
-        if (currentUser && Array.isArray(json.rows)) {
-          const starredRows = (json.rows as IPOResponseRow[])
-            .filter((row) => row.isStarred)
-            .map((row) => String(row.cik));
-          setStarred(new Set(starredRows));
-        }
-
-        // ✅ map to internal IPO type
-        const mapped: IPO[] = (json.rows as IPOResponseRow[]).map((r) => ({
-          cik: String(r.cik ?? ""),
-          ticker: r.ticker ?? "",
-          companyName: r.company_name ?? "",
-          exchange: r.exchange ?? "",
-          sharesOffered:
-            typeof r.shares_offered === "number"
-              ? r.shares_offered.toLocaleString()
-              : typeof r.shares_offered === "string"
-              ? r.shares_offered
-              : "",
-          sharePrice:
-            typeof r.share_price === "string"
-              ? r.share_price
-              : typeof r.share_price === "number"
-              ? r.share_price.toString()
-              : "",
-          estimatedIpoDate: r.estimated_ipo_date ?? "",
-          latestFilingType: r.latest_filing_type ?? "",
-          raiseAmount:
-            typeof r.market_cap === "number"
-              ? r.market_cap.toString()
-              : typeof r.market_cap === "string"
-              ? r.market_cap
-              : "",
-          logoUrl: r.logo_url ?? null,
-          rank: 0,
-        }));
-
-        setIpos(mapped);
       } catch (e: unknown) {
         // ✅ safe handling for unknown error types
         if (e instanceof Error) {
