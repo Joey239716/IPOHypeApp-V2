@@ -8,7 +8,6 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const PUBLIC_KV_API = "https://ipo-api.theipostreet.workers.dev/api/public?all=true";
 
-// ✅ Define a lightweight type for IPO rows from KV
 interface KvIpoRow {
   cik: string;
   company_name: string;
@@ -19,7 +18,7 @@ interface KvIpoRow {
   latest_filing_type: string | null;
   market_cap: string | number | null;
   logo_url: string | null;
-  [key: string]: unknown; // allow safe extension for future KV fields
+  [key: string]: unknown;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -77,9 +76,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     kvRows = Array.isArray(kvJson.rows) ? (kvJson.rows as KvIpoRow[]) : [];
   } catch (err) {
     console.error("[KV ERROR]", err);
-    return res
-      .status(500)
-      .json({ rows: [], error: "Failed to fetch IPOs from KV" });
+    return new Response(
+      JSON.stringify({ rows: [], error: "Failed to fetch IPOs from KV" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   // 2️⃣ Fetch watchlist CIKs from Supabase
@@ -90,9 +93,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (watchlistError) {
     console.error("[WATCHLIST ERROR]", watchlistError.message);
-    return res
-      .status(500)
-      .json({ rows: [], error: "Failed to fetch watchlist" });
+    return new Response(
+      JSON.stringify({ rows: [], error: "Failed to fetch watchlist" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   }
 
   const starredCiks = new Set(watchlist.map((row) => row.cik));
@@ -104,8 +111,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }));
 
   // 4️⃣ Respond
-  res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate");
-  return res
-    .status(200)
-    .json({ rows: enrichedRows, source: "kv+supabase" });
+  return new Response(JSON.stringify({ rows: enrichedRows, source: "kv+supabase" }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "s-maxage=60, stale-while-revalidate",
+    },
+  });
 }
