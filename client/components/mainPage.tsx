@@ -125,7 +125,19 @@ export default function MainPage() {
           ? "https://ipo-api.theipostreet.workers.dev/api/public?all=true"
           : "/api/upcoming?all=true";
 
-        const res = await fetch(baseUrl, { cache: "no-store" });
+        // Get session token for authenticated requests
+        const headers: HeadersInit = {};
+        if (currentUser) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+          }
+        }
+
+        const res = await fetch(baseUrl, {
+          cache: "no-store",
+          headers
+        });
         const json = await res.json();
 
         if (!res.ok || !Array.isArray(json.rows)) {

@@ -25,36 +25,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // ✅ Create Supabase client
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // ✅ Extract all cookies into a map
-  const cookieHeader = req.headers.cookie ?? "";
-  const cookies = cookieHeader.split("; ").reduce((acc, cookie) => {
-    const [name, ...rest] = cookie.split("=");
-    if (name) {
-      acc[name] = rest.join("=");
-    }
-    return acc;
-  }, {} as Record<string, string>);
+  // ✅ Get token from Authorization header
+  const token = req.headers.authorization?.replace("Bearer ", "");
 
-  // Look for Supabase auth token - it's typically stored as sb-{project-ref}-auth-token
-  const authTokenKey = Object.keys(cookies).find(key =>
-    key.startsWith("sb-") && key.endsWith("-auth-token")
-  );
-
-  if (!authTokenKey) {
-    return res.status(401).json({ rows: [], error: "Unauthorized" });
-  }
-
-  // Parse the auth token JSON (Supabase stores it as a JSON string)
-  let accessToken: string;
-  try {
-    const tokenData = JSON.parse(decodeURIComponent(cookies[authTokenKey]));
-    accessToken = tokenData.access_token || tokenData[0];
-  } catch {
-    // If parsing fails, try using the cookie value directly
-    accessToken = cookies[authTokenKey];
-  }
-
-  if (!accessToken) {
+  if (!token) {
     return res.status(401).json({ rows: [], error: "Unauthorized" });
   }
 
@@ -62,9 +36,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const {
     data: { user },
     error: userError,
-  } = await supabase.auth.getUser(accessToken);
+  } = await supabase.auth.getUser(token);
 
   if (userError || !user) {
+    console.error("[AUTH ERROR]", userError?.message || "No user found");
     return res.status(401).json({ rows: [], error: "Unauthorized" });
   }
 
