@@ -2,7 +2,7 @@
 export const runtime = "edge";
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -23,40 +23,49 @@ interface KvIpoRow {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    cookies: {
-      getAll() {
-        const cookieHeader = req.headers.cookie ?? "";
-        return cookieHeader
-          .split("; ")
-          .filter(Boolean)
-          .map((str) => {
-            const [name, ...rest] = str.split("=");
-            return { name, value: rest.join("=") };
-          });
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          const parts = [`${name}=${value}`];
-          if (options.path) parts.push(`Path=${options.path}`);
-          if (options.maxAge != null) parts.push(`Max-Age=${options.maxAge}`);
-          if (options.expires) parts.push(`Expires=${options.expires.toUTCString()}`);
-          if (options.httpOnly) parts.push("HttpOnly");
-          if (options.secure) parts.push("Secure");
-          if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
-          const prev = res.getHeader("Set-Cookie");
-          const prevArr = Array.isArray(prev) ? prev : prev ? [String(prev)] : [];
-          res.setHeader("Set-Cookie", prevArr.concat(parts.join("; ")));
-        });
-      },
-    },
-  });
+  // ✅ Create Supabase client
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  // ✅ Extract all cookies into a map
+  const cookieHeader = req.headers.cookie ?? "";
+  const cookies = cookieHeader.split("; ").reduce((acc, cookie) => {
+    const [name, ...rest] = cookie.split("=");
+    if (name) {
+      acc[name] = rest.join("=");
+    }
+    return acc;
+  }, {} as Record<string, string>);
+
+  // Look for Supabase auth token - it's typically stored as sb-{project-ref}-auth-token
+  const authTokenKey = Object.keys(cookies).find(key =>
+    key.startsWith("sb-") && key.endsWith("-auth-token")
+  );
+
+  if (!authTokenKey) {
+    return res.status(401).json({ rows: [], error: "Unauthorized" });
+  }
+
+  // Parse the auth token JSON (Supabase stores it as a JSON string)
+  let accessToken: string;
+  try {
+    const tokenData = JSON.parse(decodeURIComponent(cookies[authTokenKey]));
+    accessToken = tokenData.access_token || tokenData[0];
+  } catch {
+    // If parsing fails, try using the cookie value directly
+    accessToken = cookies[authTokenKey];
+  }
+
+  if (!accessToken) {
+    return res.status(401).json({ rows: [], error: "Unauthorized" });
+  }
+
+  // ✅ Validate user with access token
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+    error: userError,
+  } = await supabase.auth.getUser(accessToken);
 
-  if (!user) {
+  if (userError || !user) {
     return res.status(401).json({ rows: [], error: "Unauthorized" });
   }
 
