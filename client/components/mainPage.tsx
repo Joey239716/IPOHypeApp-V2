@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-client";
 import Navbar from "./navbar";
+import Footer from "./Footer";
 import { IPOTableDesktop } from "./IPOTableDesktop";
 import { IPOTableMobile } from "./IPOTableMobile";
 import { Pagination } from "./Pagination";
@@ -373,6 +374,7 @@ export default function MainPage() {
           </div>
         )}
       </main>
+      <Footer />
     </div>
   );
 }

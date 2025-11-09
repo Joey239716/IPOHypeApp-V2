@@ -67,7 +67,7 @@ class Database:
         def _do():
             return (
                 self._client.table('ipo')
-                .select('cik, latest_filing_date, is_ipo, company_name, logo_url, updated_logo_date')
+                .select('cik, latest_filing_date, is_ipo, company_name, logo_url, logo_type, website_homepage, updated_logo_date')
                 .execute()
             )
 
@@ -120,12 +120,38 @@ class Database:
         self._client.table('public_companies').upsert(pub, on_conflict='cik').execute()
 
     def get_logo_fields(self, cik: str) -> Optional[dict[str, Any]]:
-        resp = self._client.table('ipo').select('logo_url, updated_logo_date').eq('cik', cik).limit(1).execute()
+        """
+        Get logo_url, logo_type, website_homepage, and updated_logo_date for a CIK.
+        """
+        resp = self._client.table('ipo').select(
+            'logo_url, logo_type, website_homepage, updated_logo_date'
+        ).eq('cik', cik).limit(1).execute()
         data = resp.data or []
         return data[0] if data else None
 
-    def set_logo_fields(self, cik: str, logo_url: str, date_iso: str) -> None:
+    def set_logo_fields(
+        self, 
+        cik: str, 
+        logo_url: str, 
+        logo_type: str,
+        website_homepage: Optional[str],
+        date_iso: str
+    ) -> None:
+        """
+        Update logo_url, logo_type, website_homepage, and updated_logo_date for a CIK.
+        """
         if settings.DRY_RUN:
-            print(f"[DRY-RUN] set_logo_fields: {cik} -> {logo_url} ({date_iso})")
+            print(f"[DRY-RUN] set_logo_fields: {cik} -> {logo_url} type={logo_type} homepage={website_homepage} ({date_iso})")
             return
-        self._client.table('ipo').update({'logo_url': logo_url, 'updated_logo_date': date_iso}).eq('cik', cik).execute()
+        
+        update_data = {
+            'logo_url': logo_url,
+            'logo_type': logo_type,
+            'updated_logo_date': date_iso
+        }
+        
+        # Only update homepage if we have one
+        if website_homepage:
+            update_data['website_homepage'] = website_homepage
+        
+        self._client.table('ipo').update(update_data).eq('cik', cik).execute()
